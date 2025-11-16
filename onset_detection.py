@@ -346,6 +346,8 @@ def plot_envelope_with_onsets(
     """
     Plot waveform, envelope, and detected onsets using matplotlib.
     
+    Supports interactive X-axis zoom using mouse wheel (or trackpad pinch).
+    
     Args:
         y: audio signal.
         sr: sampling rate.
@@ -378,6 +380,43 @@ def plot_envelope_with_onsets(
         ax2.axvline(x=onset_t, color='r', linestyle='--', alpha=0.7, linewidth=1.5, label='Onset' if onset_t == onset_times[0] else '')
     
     ax2.legend()
+    
+    # Add interactive X-axis zoom functionality
+    def on_scroll(event):
+        """Handle mouse wheel scroll for X-axis zoom."""
+        if event.inaxes is None:
+            return
+        
+        # Get the current axis
+        ax = event.inaxes
+        
+        # Get current X-axis limits
+        cur_xlim = ax.get_xlim()
+        xdata = event.xdata  # Mouse X position in data coordinates
+        
+        # Zoom factor: scroll up (event.step > 0) zooms in, scroll down zooms out
+        zoom_factor = 1.2
+        if event.button == 'up':
+            scale_factor = 1 / zoom_factor
+        elif event.button == 'down':
+            scale_factor = zoom_factor
+        else:
+            return
+        
+        # Calculate new X-axis limits centered on mouse position
+        new_width = (cur_xlim[1] - cur_xlim[0]) * scale_factor
+        relx = (cur_xlim[1] - xdata) / (cur_xlim[1] - cur_xlim[0])
+        
+        new_xlim = [xdata - new_width * (1 - relx), xdata + new_width * relx]
+        
+        # Apply new X-axis limits to the scrolled axis
+        ax.set_xlim(new_xlim)
+        
+        # Redraw the canvas
+        fig.canvas.draw_idle()
+    
+    # Connect the scroll event to both subplots
+    fig.canvas.mpl_connect('scroll_event', on_scroll)
     
     plt.tight_layout()
     plt.show()
