@@ -102,6 +102,13 @@ Detect /t/ burst onsets using MFA TextGrid and high-frequency energy analysis.
 #### `plot_envelope_with_onsets()`
 Visualization helper for debugging onset detection.
 
+**Interactive Features:**
+- **X-axis Zoom**: Use mouse wheel (or trackpad pinch) to zoom in/out on the time axis
+  - Scroll UP or pinch OUT to zoom in
+  - Scroll DOWN or pinch IN to zoom out
+  - Zoom is centered on your mouse cursor position
+  - Both plots zoom together (synchronized X-axis)
+
 For detailed parameter documentation, see the docstrings in `onset_detection.py`.
 
 ## Demo
