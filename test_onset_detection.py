@@ -1,0 +1,220 @@
+"""
+Unit tests for onset detection module and GUI.
+
+This test suite validates:
+1. Basic onset detection functionality
+2. Click track generation
+3. Module imports and structure
+"""
+
+import unittest
+import numpy as np
+import os
+import tempfile
+import scipy.io.wavfile as wavfile
+import onset_detection
+
+
+class TestOnsetDetection(unittest.TestCase):
+    """Test cases for onset detection functionality."""
+    
+    @classmethod
+    def setUpClass(cls):
+        """Create synthetic test audio file."""
+        # Create a simple test audio file with synthetic taps
+        sr = 44100
+        duration = 3.0
+        t = np.linspace(0, duration, int(sr * duration))
+        audio = np.zeros_like(t)
+        
+        # Add 5 tap sounds at specific times
+        cls.expected_tap_times = [0.5, 1.0, 1.5, 2.0, 2.5]
+        
+        for tap_time in cls.expected_tap_times:
+            tap_duration = 0.05
+            tap_samples = int(tap_duration * sr)
+            tap_start = int(tap_time * sr)
+            
+            decay = np.exp(-np.linspace(0, 5, tap_samples))
+            noise = np.random.randn(tap_samples)
+            tap_sound = noise * decay * 0.5
+            
+            if tap_start + tap_samples < len(audio):
+                audio[tap_start:tap_start + tap_samples] += tap_sound
+        
+        # Add some background noise
+        audio += np.random.randn(len(audio)) * 0.01
+        audio = audio / np.max(np.abs(audio)) * 0.8
+        audio_int16 = (audio * 32767).astype(np.int16)
+        
+        # Save to temporary file
+        cls.temp_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        cls.temp_wav_path = cls.temp_wav.name
+        cls.temp_wav.close()
+        wavfile.write(cls.temp_wav_path, sr, audio_int16)
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up temporary files."""
+        if os.path.exists(cls.temp_wav_path):
+            os.unlink(cls.temp_wav_path)
+    
+    def test_click_track_generation(self):
+        """Test theoretical click track generation."""
+        bpm = 120
+        n_clicks = 8
+        
+        onset_times = onset_detection.get_click_onsets_from_bpm(
+            bpm, n_clicks, subdivision=1
+        )
+        
+        # Should generate exactly n_clicks
+        self.assertEqual(len(onset_times), n_clicks)
+        
+        # First click at time 0
+        self.assertAlmostEqual(onset_times[0], 0.0)
+        
+        # Clicks should be evenly spaced (0.5 seconds for 120 BPM)
+        expected_interval = 60.0 / bpm
+        for i in range(1, len(onset_times)):
+            interval = onset_times[i] - onset_times[i-1]
+            self.assertAlmostEqual(interval, expected_interval, places=6)
+    
+    def test_tap_onset_detection(self):
+        """Test tap onset detection on synthetic audio."""
+        onset_times = onset_detection.detect_tap_onsets_from_audio(
+            self.temp_wav_path,
+            hp_cutoff=500.0,
+            diff_threshold_std=2.0,
+            min_interval_ms=50.0
+        )
+        
+        # Should detect approximately the expected number of taps
+        self.assertEqual(len(onset_times), len(self.expected_tap_times))
+        
+        # Each detected onset should be close to an expected time
+        for exp_time in self.expected_tap_times:
+            # Find closest detected time
+            diffs = np.abs(onset_times - exp_time)
+            min_diff = np.min(diffs)
+            # Should be within 100ms
+            self.assertLess(min_diff, 0.1, 
+                          f"No onset detected near {exp_time}s (closest: {min_diff}s)")
+    
+    def test_compute_rms_envelope(self):
+        """Test RMS envelope computation."""
+        # Create simple test signal
+        sr = 1000
+        duration = 1.0
+        t = np.linspace(0, duration, int(sr * duration))
+        y = np.sin(2 * np.pi * 100 * t)  # 100 Hz sine wave
+        
+        env, times = onset_detection.compute_rms_envelope(
+            y, sr, 
+            frame_length_ms=50.0,
+            hop_length_ms=10.0
+        )
+        
+        # Should produce non-empty envelope
+        self.assertGreater(len(env), 0)
+        self.assertEqual(len(env), len(times))
+        
+        # Envelope values should be positive
+        self.assertTrue(np.all(env >= 0))
+    
+    def test_detect_onsets_from_envelope(self):
+        """Test onset detection from envelope."""
+        # Create simple envelope with clear peaks
+        times = np.linspace(0, 1, 1000)
+        env = np.zeros_like(times)
+        
+        # Add some peaks at specific times
+        peak_times = [0.2, 0.5, 0.8]
+        for pt in peak_times:
+            idx = int(pt * len(times))
+            env[max(0, idx-5):min(len(env), idx+5)] = 1.0
+        
+        onset_times = onset_detection.detect_onsets_from_envelope(
+            env, times,
+            diff_threshold_std=0.5,
+            min_interval_ms=50.0
+        )
+        
+        # Should detect the peaks
+        self.assertGreater(len(onset_times), 0)
+        self.assertLessEqual(len(onset_times), len(peak_times))
+
+
+class TestGUIModule(unittest.TestCase):
+    """Test cases for GUI module structure."""
+    
+    def test_gui_import(self):
+        """Test that GUI module can be imported."""
+        try:
+            import onset_detection_gui
+            self.assertTrue(True)
+        except ImportError as e:
+            self.fail(f"Failed to import GUI module: {e}")
+    
+    def test_gui_class_exists(self):
+        """Test that OnsetDetectionGUI class exists."""
+        import onset_detection_gui
+        self.assertTrue(hasattr(onset_detection_gui, 'OnsetDetectionGUI'))
+    
+    def test_gui_has_required_methods(self):
+        """Test that GUI class has required methods."""
+        import onset_detection_gui
+        
+        required_methods = [
+            'detect_tap_onsets',
+            'detect_t_burst_onsets',
+            'generate_click_track',
+            'update_status',
+            'append_result',
+            'clear_results'
+        ]
+        
+        for method_name in required_methods:
+            self.assertTrue(
+                hasattr(onset_detection_gui.OnsetDetectionGUI, method_name),
+                f"GUI class missing method: {method_name}"
+            )
+
+
+class TestModuleStructure(unittest.TestCase):
+    """Test cases for module structure and API."""
+    
+    def test_required_functions_exist(self):
+        """Test that all required functions are exported."""
+        required_functions = [
+            'compute_rms_envelope',
+            'detect_onsets_from_envelope',
+            'get_click_onsets_from_bpm',
+            'detect_tap_onsets_from_audio',
+            'detect_t_burst_onsets_from_mfa',
+            'plot_envelope_with_onsets'
+        ]
+        
+        for func_name in required_functions:
+            self.assertTrue(
+                hasattr(onset_detection, func_name),
+                f"Module missing function: {func_name}"
+            )
+    
+    def test_functions_have_docstrings(self):
+        """Test that functions have documentation."""
+        functions = [
+            onset_detection.compute_rms_envelope,
+            onset_detection.detect_onsets_from_envelope,
+            onset_detection.get_click_onsets_from_bpm,
+            onset_detection.detect_tap_onsets_from_audio,
+            onset_detection.plot_envelope_with_onsets
+        ]
+        
+        for func in functions:
+            self.assertIsNotNone(func.__doc__)
+            self.assertGreater(len(func.__doc__.strip()), 10)
+
+
+if __name__ == '__main__':
+    unittest.main()
