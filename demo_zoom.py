@@ -74,7 +74,8 @@ def main():
     # Create the plot with zoom functionality
     onset_detection.plot_envelope_with_onsets(
         y, sr, env, times, onset_times,
-        title="Test Plot - Try Mouse Wheel to Zoom X-axis"
+        title="Test Plot - Try Mouse Wheel to Zoom X-axis",
+        envelope_type="Test Envelope"
     )
     
     print()

@@ -88,7 +88,8 @@ def test_zoom_with_real_detection():
             print("Creating plot with zoom functionality...")
             onset_detection.plot_envelope_with_onsets(
                 y, sr_loaded, env, times, detected_onsets,
-                title="Integration Test - X-axis Zoom"
+                title="Integration Test - X-axis Zoom",
+                envelope_type="Test Envelope"
             )
             
             # Verify the plot was created

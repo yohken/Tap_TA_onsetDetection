@@ -48,7 +48,8 @@ def example_tap_detection():
         # Plot the results
         onset_detection.plot_envelope_with_onsets(
             y, sr, env, times, onset_times,
-            title="Tap Onset Detection"
+            title="Tap Onset Detection",
+            envelope_type="RMS Envelope (HP filtered)"
         )
         
         print("✓ Plot displayed. Close the plot window to continue.")
@@ -96,7 +97,8 @@ def example_t_burst_detection():
         # Plot the results
         onset_detection.plot_envelope_with_onsets(
             y, sr, env, times, onset_times,
-            title="/t/ Burst Onset Detection"
+            title="/t/ Burst Onset Detection",
+            envelope_type="RMS Envelope (high-freq)"
         )
         
         print("✓ Plot displayed. Close the plot window to continue.")

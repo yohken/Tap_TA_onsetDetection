@@ -189,7 +189,8 @@ class OnsetDetectionGUI:
             self.append_result("\nGenerating plot...")
             onset_detection.plot_envelope_with_onsets(
                 y, sr, env, times, onset_times,
-                title=f"Tap Onset Detection - {os.path.basename(wav_path)}"
+                title=f"Tap Onset Detection - {os.path.basename(wav_path)}",
+                envelope_type="RMS Envelope (HP filtered)"
             )
             
             self.update_status("Detection complete!", 'green')
@@ -261,7 +262,8 @@ class OnsetDetectionGUI:
             self.append_result("\nGenerating plot...")
             onset_detection.plot_envelope_with_onsets(
                 y, sr, env, times, onset_times,
-                title=f"/t/ Burst Onset Detection - {os.path.basename(wav_path)}"
+                title=f"/t/ Burst Onset Detection - {os.path.basename(wav_path)}",
+                envelope_type="RMS Envelope (high-freq)"
             )
             
             self.update_status("Detection complete!", 'green')
