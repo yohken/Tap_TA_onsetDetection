@@ -550,6 +550,7 @@ def plot_envelope_with_onsets(
     times: np.ndarray,
     onset_times: np.ndarray,
     title: str = "",
+    envelope_type: str = "RMS Envelope",
 ) -> None:
     """
     Plot waveform, envelope, and detected onsets using matplotlib.
@@ -559,10 +560,11 @@ def plot_envelope_with_onsets(
     Args:
         y: audio signal.
         sr: sampling rate.
-        env: RMS envelope.
+        env: envelope (RMS, Hilbert, or other).
         times: time stamps for envelope frames.
         onset_times: detected onset times in seconds.
         title: optional plot title.
+        envelope_type: label for the envelope type (default: "RMS Envelope").
     """
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
     
@@ -578,9 +580,9 @@ def plot_envelope_with_onsets(
         ax1.axvline(x=onset_t, color='r', linestyle='--', alpha=0.7, linewidth=1.5)
     
     # Plot envelope
-    ax2.plot(times, env, label='RMS Envelope', linewidth=1.5)
+    ax2.plot(times, env, label=envelope_type, linewidth=1.5)
     ax2.set_xlabel('Time (s)')
-    ax2.set_ylabel('RMS Energy')
+    ax2.set_ylabel('Envelope')
     ax2.grid(True, alpha=0.3)
     
     # Mark onsets on envelope
