@@ -145,6 +145,160 @@ class TestOnsetDetection(unittest.TestCase):
         self.assertLessEqual(len(onset_times), len(peak_times))
 
 
+class TestHilbertEnvelope(unittest.TestCase):
+    """Test cases for Hilbert envelope-based onset detection."""
+    
+    @classmethod
+    def setUpClass(cls):
+        """Create synthetic test audio files for metronome and tap."""
+        sr = 48000  # Use target sampling rate
+        
+        # Create metronome test file with clear sound bursts
+        duration = 2.0
+        t = np.linspace(0, duration, int(sr * duration))
+        metronome_audio = np.zeros_like(t)
+        
+        # Add 4 metronome clicks at specific times
+        cls.expected_metronome_times = [0.3, 0.8, 1.3, 1.8]
+        
+        for click_time in cls.expected_metronome_times:
+            click_duration = 0.02
+            click_samples = int(click_duration * sr)
+            click_start = int(click_time * sr)
+            
+            # Create a sharp transient with exponential decay
+            decay = np.exp(-np.linspace(0, 8, click_samples))
+            click_sound = decay * 0.8
+            
+            if click_start + click_samples < len(metronome_audio):
+                metronome_audio[click_start:click_start + click_samples] += click_sound
+        
+        # Add minimal noise
+        metronome_audio += np.random.randn(len(metronome_audio)) * 0.005
+        metronome_audio = metronome_audio / np.max(np.abs(metronome_audio)) * 0.9
+        metronome_int16 = (metronome_audio * 32767).astype(np.int16)
+        
+        cls.temp_metronome_wav = tempfile.NamedTemporaryFile(suffix='_metronome.wav', delete=False)
+        cls.temp_metronome_path = cls.temp_metronome_wav.name
+        cls.temp_metronome_wav.close()
+        wavfile.write(cls.temp_metronome_path, sr, metronome_int16)
+        
+        # Create tap test file with clear taps
+        tap_audio = np.zeros_like(t)
+        cls.expected_tap_times = [0.4, 0.9, 1.4]
+        
+        for tap_time in cls.expected_tap_times:
+            tap_duration = 0.03
+            tap_samples = int(tap_duration * sr)
+            tap_start = int(tap_time * sr)
+            
+            # Create tap sound with high-frequency content and decay
+            decay = np.exp(-np.linspace(0, 6, tap_samples))
+            noise = np.random.randn(tap_samples)
+            tap_sound = noise * decay * 0.7
+            
+            if tap_start + tap_samples < len(tap_audio):
+                tap_audio[tap_start:tap_start + tap_samples] += tap_sound
+        
+        # Add background noise
+        tap_audio += np.random.randn(len(tap_audio)) * 0.01
+        tap_audio = tap_audio / np.max(np.abs(tap_audio)) * 0.85
+        tap_int16 = (tap_audio * 32767).astype(np.int16)
+        
+        cls.temp_tap_wav = tempfile.NamedTemporaryFile(suffix='_tap.wav', delete=False)
+        cls.temp_tap_path = cls.temp_tap_wav.name
+        cls.temp_tap_wav.close()
+        wavfile.write(cls.temp_tap_path, sr, tap_int16)
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up temporary files."""
+        if os.path.exists(cls.temp_metronome_path):
+            os.unlink(cls.temp_metronome_path)
+        if os.path.exists(cls.temp_tap_path):
+            os.unlink(cls.temp_tap_path)
+    
+    def test_compute_hilbert_envelope(self):
+        """Test Hilbert envelope computation."""
+        # Create simple test signal
+        sr = 48000
+        duration = 0.1
+        t = np.linspace(0, duration, int(sr * duration))
+        # Create amplitude-modulated signal
+        carrier_freq = 1000
+        modulation_freq = 10
+        y = (1 + 0.5 * np.sin(2 * np.pi * modulation_freq * t)) * np.sin(2 * np.pi * carrier_freq * t)
+        
+        env = onset_detection.compute_hilbert_envelope(y, sr)
+        
+        # Should produce envelope with same length as signal
+        self.assertEqual(len(env), len(y))
+        
+        # Envelope values should be non-negative
+        self.assertTrue(np.all(env >= 0))
+        
+        # Envelope should be smooth and follow the amplitude modulation
+        self.assertGreater(np.max(env), 0)
+    
+    def test_detect_metronome_onsets(self):
+        """Test metronome onset detection with Hilbert envelope."""
+        onset_times = onset_detection.detect_metronome_onsets_from_audio(
+            self.temp_metronome_path,
+            target_sr=48000,
+            threshold_ratio=0.1,
+            min_interval_ms=50.0
+        )
+        
+        # Should detect approximately the expected number of clicks
+        self.assertEqual(len(onset_times), len(self.expected_metronome_times))
+        
+        # Each detected onset should be close to an expected time
+        for exp_time in self.expected_metronome_times:
+            diffs = np.abs(onset_times - exp_time)
+            min_diff = np.min(diffs)
+            # Should be within 50ms
+            self.assertLess(min_diff, 0.05, 
+                          f"No metronome onset detected near {exp_time}s (closest: {min_diff}s)")
+    
+    def test_detect_tap_onsets_hilbert(self):
+        """Test tap onset detection with Hilbert envelope and lookback."""
+        onset_times = onset_detection.detect_tap_onsets_from_audio_hilbert(
+            self.temp_tap_path,
+            target_sr=48000,
+            hp_cutoff=500.0,
+            threshold_ratio=0.1,
+            lookback_points=74,
+            min_interval_ms=50.0
+        )
+        
+        # Should detect approximately the expected number of taps
+        self.assertEqual(len(onset_times), len(self.expected_tap_times))
+        
+        # Each detected onset should be close to an expected time
+        for exp_time in self.expected_tap_times:
+            diffs = np.abs(onset_times - exp_time)
+            min_diff = np.min(diffs)
+            # Should be within 50ms
+            self.assertLess(min_diff, 0.05, 
+                          f"No tap onset detected near {exp_time}s (closest: {min_diff}s)")
+    
+    def test_hilbert_envelope_with_filter(self):
+        """Test Hilbert envelope with band-pass filtering."""
+        sr = 48000
+        duration = 0.1
+        t = np.linspace(0, duration, int(sr * duration))
+        
+        # Create signal with low and high frequency components
+        y = np.sin(2 * np.pi * 100 * t) + np.sin(2 * np.pi * 2000 * t)
+        
+        # Compute envelope with high-pass filter
+        env_hpf = onset_detection.compute_hilbert_envelope(y, sr, band=(500.0, None))
+        
+        # Should produce valid envelope
+        self.assertEqual(len(env_hpf), len(y))
+        self.assertTrue(np.all(env_hpf >= 0))
+
+
 class TestGUIModule(unittest.TestCase):
     """Test cases for GUI module structure."""
     
@@ -188,9 +342,12 @@ class TestModuleStructure(unittest.TestCase):
         """Test that all required functions are exported."""
         required_functions = [
             'compute_rms_envelope',
+            'compute_hilbert_envelope',
             'detect_onsets_from_envelope',
             'get_click_onsets_from_bpm',
+            'detect_metronome_onsets_from_audio',
             'detect_tap_onsets_from_audio',
+            'detect_tap_onsets_from_audio_hilbert',
             'detect_t_burst_onsets_from_mfa',
             'plot_envelope_with_onsets'
         ]
