@@ -7,6 +7,7 @@ A Python module for onset detection in audio signals, specifically designed for 
 
 ## Features
 
+- **GUI Application**: Easy-to-use graphical interface with file selection dialogs and automatic plotting
 - Clean, well-documented Python code using standard DSP techniques (no machine learning)
 - Python 3.10+ with full type hints
 - Uses industry-standard libraries: numpy, scipy, librosa, textgrid, matplotlib
@@ -17,7 +18,30 @@ A Python module for onset detection in audio signals, specifically designed for 
 pip install -r requirements.txt
 ```
 
+Note: tkinter is usually included with Python. If not, install it:
+- Ubuntu/Debian: `sudo apt-get install python3-tk`
+- macOS: Included with Python
+- Windows: Included with Python
+
 ## Quick Start
+
+### GUI Application (Recommended)
+
+Launch the graphical interface:
+
+```bash
+python onset_detection_gui.py
+```
+
+The GUI provides:
+- File selection dialogs for easy audio file selection
+- Automatic visualization of detection results
+- Support for all three detection methods
+- Real-time status updates and results display
+
+See [GUI_README.md](GUI_README.md) for detailed GUI documentation.
+
+### Command-Line Interface
 
 ### 1. Generate Click Track Onsets (Theoretical)
 
