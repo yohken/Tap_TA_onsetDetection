@@ -56,7 +56,7 @@ print(onsets)  # [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
 ### 2. Detect Tap Onsets from Audio
 
 ```python
-# Detect taps from a WAV file
+# Original method: Detect taps using RMS envelope
 tap_onsets = onset_detection.detect_tap_onsets_from_audio(
     'recording.wav',
     hp_cutoff=500.0,           # High-pass filter at 500 Hz
@@ -64,6 +64,30 @@ tap_onsets = onset_detection.detect_tap_onsets_from_audio(
     min_interval_ms=50.0        # Minimum 50ms between taps
 )
 print(f"Detected {len(tap_onsets)} taps at: {tap_onsets}")
+
+# New method: Detect taps using Hilbert envelope (48kHz, with lookback criterion)
+tap_onsets = onset_detection.detect_tap_onsets_from_audio_hilbert(
+    'recording.wav',
+    target_sr=48000,           # Resample to 48kHz
+    hp_cutoff=500.0,           # High-pass filter at 500 Hz
+    threshold_ratio=0.1,        # 10% of peak amplitude
+    lookback_points=74,         # ~2ms lookback at 48kHz
+    min_interval_ms=50.0        # Minimum 50ms between taps
+)
+print(f"Detected {len(tap_onsets)} taps at: {tap_onsets}")
+```
+
+### 2b. Detect Metronome Onsets from Audio
+
+```python
+# Detect metronome clicks using Hilbert envelope (48kHz)
+metronome_onsets = onset_detection.detect_metronome_onsets_from_audio(
+    'metronome.wav',
+    target_sr=48000,           # Resample to 48kHz
+    threshold_ratio=0.1,        # 10% of peak amplitude
+    min_interval_ms=50.0        # Minimum 50ms between clicks
+)
+print(f"Detected {len(metronome_onsets)} clicks at: {metronome_onsets}")
 ```
 
 ### 3. Detect /t/ Burst Onsets with MFA TextGrid
@@ -87,14 +111,23 @@ print(f"Detected {len(t_burst_onsets)} /t/ bursts")
 #### `compute_rms_envelope()`
 Compute short-time RMS envelope with optional band-pass filtering.
 
+#### `compute_hilbert_envelope()`
+Compute Hilbert envelope: E(t) = sqrt(x(t)^2 + x_hat(t)^2) using Hilbert transform. Provides instantaneous amplitude of the signal.
+
 #### `detect_onsets_from_envelope()`
 Detect onsets from an envelope using derivative-based peak picking.
 
 #### `get_click_onsets_from_bpm()`
 Generate theoretical click track onset times from BPM and subdivision.
 
+#### `detect_metronome_onsets_from_audio()`
+Detect metronome onsets using Hilbert envelope at 48kHz sampling rate. Onset defined as when envelope exceeds 10% of peak amplitude for each sound burst.
+
 #### `detect_tap_onsets_from_audio()`
-Detect tap onsets from audio file using high-pass filtered RMS envelope.
+Detect tap onsets from audio file using high-pass filtered RMS envelope (original method).
+
+#### `detect_tap_onsets_from_audio_hilbert()`
+Detect tap onsets using Hilbert envelope at 48kHz with high-pass filtering. Onset defined as when amplitude exceeds 10% of peak, with 74-point (~2ms) lookback criterion to ensure quiet period before onset.
 
 #### `detect_t_burst_onsets_from_mfa()`
 Detect /t/ burst onsets using MFA TextGrid and high-frequency energy analysis.
@@ -123,12 +156,28 @@ Note: The demo requires test audio files. See the `__main__` block in `onset_det
 
 ## Algorithm Details
 
-### Tap Onset Detection
+### Metronome Onset Detection (New Hilbert-based Method)
+1. Load audio and resample to 48,000 Hz
+2. Compute Hilbert envelope: E(t) = sqrt(x(t)^2 + x_hat(t)^2)
+3. Find prominent peaks in envelope (sound bursts)
+4. For each peak, search backward to find onset point
+5. Onset defined as when envelope exceeds 10% of peak amplitude
+
+### Tap Onset Detection (Original RMS Method)
 1. Load audio and apply high-pass filter (default: 500 Hz)
 2. Compute short-time RMS envelope
 3. Calculate first-order difference to detect energy rises
 4. Apply threshold: mean + k*std of positive differences
 5. Find peaks exceeding threshold with minimum spacing
+
+### Tap Onset Detection (New Hilbert-based Method)
+1. Load audio and resample to 48,000 Hz
+2. Apply high-pass filter (default: 500 Hz) as preprocessing
+3. Compute Hilbert envelope: E(t) = sqrt(x(t)^2 + x_hat(t)^2)
+4. Find prominent peaks in envelope (sound bursts)
+5. For each peak, search backward to find onset point
+6. Onset defined as when envelope exceeds 10% of peak amplitude
+7. Valid only if envelope was below threshold for 74 points (~2ms) before onset
 
 ### /t/ Burst Detection
 1. Load audio and MFA TextGrid

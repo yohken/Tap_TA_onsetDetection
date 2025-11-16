@@ -97,6 +97,68 @@ def compute_rms_envelope(
     return env, times
 
 
+def compute_hilbert_envelope(
+    y: np.ndarray,
+    sr: int,
+    band: tuple[float | None, float | None] | None = None,
+) -> np.ndarray:
+    """
+    Compute the Hilbert envelope of signal y.
+    
+    The Hilbert envelope is computed as E(t) = sqrt(x(t)^2 + x_hat(t)^2),
+    where x(t) is the filtered signal and x_hat(t) is its Hilbert transform.
+    
+    Args:
+        y: audio signal, mono, float32 or float64.
+        sr: sampling rate in Hz.
+        band: optional (low_freq, high_freq) band-pass in Hz.
+              If None, use full-band. If high_freq is None, treat it as 'sr/2'.
+    
+    Returns:
+        env: Hilbert envelope as a 1D numpy array (same length as y).
+    """
+    # Apply band-pass filter if specified
+    y_filtered = y.copy()
+    if band is not None:
+        low_freq, high_freq = band
+        # Set high_freq to Nyquist if None
+        if high_freq is None:
+            high_freq = sr / 2.0
+        
+        # Design Butterworth filter
+        nyquist = sr / 2.0
+        
+        # Determine filter type
+        if low_freq is not None and low_freq > 0:
+            if high_freq < nyquist:
+                # Band-pass filter
+                sos = scipy.signal.butter(
+                    4, [low_freq, high_freq], btype='band', fs=sr, output='sos'
+                )
+            else:
+                # High-pass filter
+                sos = scipy.signal.butter(
+                    4, low_freq, btype='high', fs=sr, output='sos'
+                )
+        else:
+            # Low-pass filter
+            sos = scipy.signal.butter(
+                4, high_freq, btype='low', fs=sr, output='sos'
+            )
+        
+        # Apply filter
+        y_filtered = scipy.signal.sosfilt(sos, y_filtered)
+    
+    # Compute Hilbert transform
+    analytic_signal = scipy.signal.hilbert(y_filtered)
+    
+    # Compute envelope as magnitude of analytic signal
+    # E(t) = sqrt(x(t)^2 + x_hat(t)^2) = |analytic_signal|
+    env = np.abs(analytic_signal)
+    
+    return env
+
+
 def detect_onsets_from_envelope(
     env: np.ndarray,
     times: np.ndarray,
@@ -191,6 +253,152 @@ def get_click_onsets_from_bpm(
     onset_times = click_indices * seconds_per_click + time_offset_sec
     
     return onset_times
+
+
+def detect_metronome_onsets_from_audio(
+    wav_path: str,
+    *,
+    target_sr: int = 48000,
+    threshold_ratio: float = 0.1,
+    min_interval_ms: float = 50.0,
+    prominence_ratio: float = 0.3,
+) -> np.ndarray:
+    """
+    Detect metronome onsets from a mono WAV file using Hilbert envelope.
+    
+    Strategy:
+        1) Load audio and resample to target_sr (48,000 Hz by default).
+        2) Compute Hilbert envelope: E(t) = sqrt(x(t)^2 + x_hat(t)^2).
+        3) Define onset as when envelope exceeds threshold_ratio (10%) of 
+           maximum amplitude for each sound burst.
+    
+    Args:
+        wav_path: path to WAV file.
+        target_sr: target sampling rate in Hz (default: 48000).
+        threshold_ratio: onset threshold as fraction of max amplitude (default: 0.1 = 10%).
+        min_interval_ms: minimum interval between onsets in milliseconds (default: 50.0).
+        prominence_ratio: minimum prominence for peak detection as fraction of max (default: 0.3).
+    
+    Returns:
+        onset_times: 1D array of onset times in seconds.
+    """
+    # Load audio and resample to target sampling rate
+    y, sr = librosa.load(wav_path, sr=target_sr, mono=True)
+    
+    # Compute Hilbert envelope (no filtering for metronome)
+    env = compute_hilbert_envelope(y, sr, band=None)
+    
+    # Find peaks in the envelope to identify sound bursts
+    # Use distance and prominence parameters to find significant bursts
+    min_distance = int(min_interval_ms * sr / 1000.0)
+    max_env = np.max(env)
+    prominence = prominence_ratio * max_env
+    
+    peaks, _ = scipy.signal.find_peaks(env, distance=min_distance, prominence=prominence)
+    
+    # For each peak, find the onset point where envelope exceeds 10% of peak amplitude
+    onset_times = []
+    for peak_idx in peaks:
+        peak_amplitude = env[peak_idx]
+        threshold = threshold_ratio * peak_amplitude
+        
+        # Search backward from peak to find where envelope first exceeds threshold
+        onset_idx = peak_idx
+        for i in range(peak_idx - 1, max(0, peak_idx - min_distance), -1):
+            if env[i] >= threshold:
+                onset_idx = i
+            else:
+                break
+        
+        # Convert sample index to time
+        onset_time = onset_idx / sr
+        onset_times.append(onset_time)
+    
+    return np.array(onset_times)
+
+
+def detect_tap_onsets_from_audio_hilbert(
+    wav_path: str,
+    *,
+    target_sr: int = 48000,
+    hp_cutoff: float = 500.0,
+    threshold_ratio: float = 0.1,
+    lookback_points: int = 74,
+    min_interval_ms: float = 50.0,
+    prominence_ratio: float = 0.3,
+) -> np.ndarray:
+    """
+    Detect tap onsets from a mono WAV file using Hilbert envelope with lookback criterion.
+    
+    Strategy:
+        1) Load audio and resample to target_sr (48,000 Hz by default).
+        2) Apply high-pass filter (HPF) as preprocessing.
+        3) Compute Hilbert envelope: E(t) = sqrt(x(t)^2 + x_hat(t)^2).
+        4) Define onset as when amplitude exceeds threshold_ratio (10%) of 
+           maximum amplitude of sound burst, BUT only if it was below this 
+           threshold for lookback_points (~74 points = ~2ms at 48kHz) immediately before.
+    
+    Args:
+        wav_path: path to WAV file.
+        target_sr: target sampling rate in Hz (default: 48000).
+        hp_cutoff: high-pass filter cutoff frequency in Hz (default: 500.0).
+        threshold_ratio: onset threshold as fraction of max amplitude (default: 0.1 = 10%).
+        lookback_points: number of points to check before onset (default: 74 = ~2ms at 48kHz).
+        min_interval_ms: minimum interval between onsets in milliseconds (default: 50.0).
+        prominence_ratio: minimum prominence for peak detection as fraction of max (default: 0.3).
+    
+    Returns:
+        onset_times: 1D array of onset times in seconds.
+    """
+    # Load audio and resample to target sampling rate
+    y, sr = librosa.load(wav_path, sr=target_sr, mono=True)
+    
+    # Compute Hilbert envelope with high-pass filtering
+    env = compute_hilbert_envelope(y, sr, band=(hp_cutoff, None))
+    
+    # Find peaks in the envelope to identify potential sound bursts
+    min_distance = int(min_interval_ms * sr / 1000.0)
+    max_env = np.max(env)
+    prominence = prominence_ratio * max_env
+    
+    peaks, _ = scipy.signal.find_peaks(env, distance=min_distance, prominence=prominence)
+    
+    # For each peak, find the onset point with lookback criterion
+    onset_times = []
+    for peak_idx in peaks:
+        peak_amplitude = env[peak_idx]
+        threshold = threshold_ratio * peak_amplitude
+        
+        # Search backward from peak to find where envelope first exceeds threshold
+        onset_idx = None
+        for i in range(peak_idx - 1, max(0, peak_idx - min_distance), -1):
+            if env[i] >= threshold:
+                # Check if envelope was below threshold for lookback_points before this point
+                lookback_start = max(0, i - lookback_points)
+                lookback_region = env[lookback_start:i]
+                
+                # Verify that all points in lookback region are below threshold
+                if len(lookback_region) > 0 and np.all(lookback_region < threshold):
+                    onset_idx = i
+                    break
+            else:
+                # If we go below threshold, stop searching
+                break
+        
+        # If no valid onset found with lookback criterion, use the first point above threshold
+        if onset_idx is None:
+            for i in range(peak_idx - 1, max(0, peak_idx - min_distance), -1):
+                if env[i] >= threshold:
+                    onset_idx = i
+                else:
+                    break
+        
+        # Convert sample index to time
+        if onset_idx is not None:
+            onset_time = onset_idx / sr
+            onset_times.append(onset_time)
+    
+    return np.array(onset_times)
 
 
 def detect_tap_onsets_from_audio(
