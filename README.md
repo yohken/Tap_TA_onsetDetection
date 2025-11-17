@@ -135,7 +135,10 @@ Detect /t/ burst onsets using MFA TextGrid and high-frequency energy analysis.
 #### `plot_envelope_with_onsets()`
 Visualization helper for debugging onset detection.
 
-**Interactive Features:**
+**Interactive Features (GUI Mode):**
+- **HPF Frequency Slider**: Adjust High-Pass Filter cutoff frequency (100-2000 Hz) after initial detection
+- **Re-detect Button**: Recompute onset detection with new HPF frequency without restarting
+- **Onset Count Display**: Real-time display of number of detected onsets
 - **X-axis Zoom**: Use mouse wheel (or trackpad pinch) to zoom in/out on the time axis
   - Scroll UP or pinch OUT to zoom in
   - Scroll DOWN or pinch IN to zoom out
