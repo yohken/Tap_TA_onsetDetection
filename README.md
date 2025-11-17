@@ -8,6 +8,7 @@ A Python module for onset detection in audio signals, specifically designed for 
 ## Features
 
 - **GUI Application**: Easy-to-use graphical interface with file selection dialogs and automatic plotting
+- **Envelope Comparison Framework**: Systematic comparison of onset detection variants with quantitative metrics
 - Clean, well-documented Python code using standard DSP techniques (no machine learning)
 - Python 3.10+ with full type hints
 - Uses industry-standard libraries: numpy, scipy, librosa, textgrid, matplotlib
@@ -24,6 +25,45 @@ Note: tkinter is usually included with Python. If not, install it:
 - Windows: Included with Python
 
 ## Quick Start
+
+### Envelope Comparison (NEW)
+
+Compare different envelope configurations and detection parameters:
+
+```bash
+# Basic comparison
+python compare_envelopes.py --wav audio.wav --export_plots
+
+# Test different HPF cutoffs
+python compare_envelopes.py --wav audio.wav \
+    --hpf_cutoffs 0,300,500,1000 \
+    --export_plots --out_dir results
+
+# Compare smoothing effects  
+python compare_envelopes.py --wav audio.wav \
+    --smooth_ms 0,0.1,0.5,1.0 \
+    --hpf_cutoffs 300 \
+    --export_plots --out_dir results
+```
+
+**What it does**:
+- Generates multiple envelope variants (Hilbert smoothed/unsmoothed, RMS-based)
+- Tests different HPF cutoffs, smoothing windows, and detection parameters
+- Produces quantitative metrics for each variant (rise time, slope, event count)
+- Creates multi-panel comparison plots
+- Exports results to CSV with git commit hash for reproducibility
+
+**Use cases**:
+- Choose optimal parameters for your audio type
+- Understand how parameters affect detection
+- Document and reproduce detection configurations
+- Compare different envelope methods side-by-side
+
+See [COMPARISON_README.md](COMPARISON_README.md) for detailed documentation on:
+- Metrics explanation (rise time, slope, etc.)
+- Parameter effects and trade-offs
+- Usage examples for different audio types
+- Interpreting results and selecting best configuration
 
 ### GUI Application (Recommended)
 
