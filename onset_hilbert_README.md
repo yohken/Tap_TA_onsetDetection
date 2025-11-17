@@ -99,10 +99,10 @@ onset_hilbert.plot_waveform_and_envelope(
 )
 ```
 
-### 5. Interactive HPF Tuning
+### 5. Interactive HPF Tuning (REPL-style)
 
 ```python
-# Interactively adjust the high-pass filter cutoff
+# Interactively adjust the high-pass filter cutoff (REPL-style)
 onset_hilbert.interactive_hpf_tuning(
     'recording.wav',
     initial_hp_cutoff_hz=300.0,
@@ -110,6 +110,27 @@ onset_hilbert.interactive_hpf_tuning(
 )
 # This will show plots and prompt for new cutoff values
 # Press ENTER to exit
+```
+
+### 5b. Interactive HPF Tuning (GUI with Slider)
+
+```python
+# Interactive GUI with slider and re-detect button (RECOMMENDED for re-detection)
+# This ensures all re-detection uses the Fujii method
+onset_hilbert.plot_waveform_and_envelope_interactive(
+    'recording.wav',
+    initial_hp_cutoff_hz=300.0,
+    is_click=False,
+    threshold_ratio=0.1,
+    min_distance_ms=100.0,
+    smooth_ms=0.5,
+    title='Interactive Onset Detection'
+)
+# Features:
+# - Slider to adjust HPF cutoff (100-2000 Hz)
+# - Re-detect button to recompute with new HPF
+# - X-axis zoom with mouse wheel
+# - Always uses Fujii method (10% threshold, backward search, linear interpolation)
 ```
 
 ### 6. GUI Helpers
@@ -218,6 +239,20 @@ Plot waveform, envelope, and detected events.
 
 ---
 
+#### `plot_waveform_and_envelope_interactive(wav_path, initial_hp_cutoff_hz=300.0, is_click=False, ...)`
+
+Interactive GUI for HPF tuning and re-detection using the Fujii method.
+
+**Features:**
+- Interactive slider to adjust HPF cutoff frequency (100-2000 Hz)
+- Re-detect button to recompute onsets with new HPF frequency
+- X-axis zoom using mouse wheel
+- **ALWAYS uses Fujii method for re-detection**: highpass_filter → hilbert_envelope → detect_onsets_and_peaks_from_envelope
+
+**This is the RECOMMENDED function for interactive re-detection** as it guarantees compliance with the Fujii method (10% threshold, backward search, linear interpolation).
+
+---
+
 #### `interactive_hpf_tuning(wav_path, initial_hp_cutoff_hz=300.0, is_click=False, ...)`
 
 REPL-style interactive HPF tuning.
@@ -289,7 +324,16 @@ Run the test suite:
 python -m unittest test_onset_hilbert -v
 ```
 
-All 17 tests should pass with sub-millisecond accuracy.
+All 23 tests should pass, including:
+- **17 core functionality tests** (filtering, envelope, detection, CSV export, etc.)
+- **3 linear interpolation tests** (validates sub-sample accuracy)
+- **3 re-detection consistency tests** (ensures Fujii method is always used)
+
+Test coverage includes:
+- Sub-sample linear interpolation accuracy (< 0.1 sample error)
+- HPF re-detection affects results appropriately
+- Fujii method pipeline consistency
+- Deterministic behavior across multiple runs
 
 ## Example Output
 
