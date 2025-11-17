@@ -165,12 +165,19 @@ class OnsetDetectionGUI:
             self.append_result(f"Processing file: {os.path.basename(wav_path)}")
             self.append_result("=" * 60)
             
-            # Detect tap onsets
+            # Load audio for interactive plotting
+            y, sr = librosa.load(wav_path, sr=None, mono=True)
+            
+            # Initial detection with default parameters
+            hp_cutoff = 500.0
+            diff_threshold_std = 2.0
+            min_interval_ms = 50.0
+            
             onset_times = onset_detection.detect_tap_onsets_from_audio(
                 wav_path,
-                hp_cutoff=500.0,
-                diff_threshold_std=2.0,
-                min_interval_ms=50.0
+                hp_cutoff=hp_cutoff,
+                diff_threshold_std=diff_threshold_std,
+                min_interval_ms=min_interval_ms
             )
             
             # Display results
@@ -178,19 +185,16 @@ class OnsetDetectionGUI:
             for i, t in enumerate(onset_times, 1):
                 self.append_result(f"  {i}. {t:.3f} seconds")
             
-            # Load audio for plotting
-            y, sr = librosa.load(wav_path, sr=None, mono=True)
-            env, times = onset_detection.compute_rms_envelope(
-                y, sr, 
-                band=(500.0, None)
-            )
-            
-            # Plot results
-            self.append_result("\nGenerating plot...")
-            onset_detection.plot_envelope_with_onsets(
-                y, sr, env, times, onset_times,
+            # Plot results with interactive controls
+            self.append_result("\nGenerating interactive plot...")
+            self.append_result("Use the slider to adjust HPF frequency and click 'Re-detect' to update.")
+            onset_detection.plot_envelope_with_onsets_interactive(
+                wav_path, y, sr,
+                initial_hp_cutoff=hp_cutoff,
+                diff_threshold_std=diff_threshold_std,
+                min_interval_ms=min_interval_ms,
                 title=f"Tap Onset Detection - {os.path.basename(wav_path)}",
-                envelope_type="RMS Envelope (HP filtered)"
+                detection_type="tap"
             )
             
             self.update_status("Detection complete!", 'green')
@@ -236,14 +240,20 @@ class OnsetDetectionGUI:
             self.append_result(f"  TextGrid: {os.path.basename(tg_path)}")
             self.append_result("=" * 60)
             
-            # Detect /t/ burst onsets
+            # Load audio for interactive plotting
+            y, sr = librosa.load(wav_path, sr=None, mono=True)
+            
+            # Initial detection with default parameters
+            high_freq_min = 2000.0
+            diff_threshold_std = 2.0
+            
             onset_times = onset_detection.detect_t_burst_onsets_from_mfa(
                 wav_path,
                 tg_path,
                 tier_name="phones",
                 phone_label="t",
-                high_freq_min=2000.0,
-                diff_threshold_std=2.0
+                high_freq_min=high_freq_min,
+                diff_threshold_std=diff_threshold_std
             )
             
             # Display results
@@ -251,19 +261,16 @@ class OnsetDetectionGUI:
             for i, t in enumerate(onset_times, 1):
                 self.append_result(f"  {i}. {t:.3f} seconds")
             
-            # Load audio for plotting
-            y, sr = librosa.load(wav_path, sr=None, mono=True)
-            env, times = onset_detection.compute_rms_envelope(
-                y, sr,
-                band=(2000.0, None)
-            )
-            
-            # Plot results
-            self.append_result("\nGenerating plot...")
-            onset_detection.plot_envelope_with_onsets(
-                y, sr, env, times, onset_times,
+            # Plot results with interactive controls
+            self.append_result("\nGenerating interactive plot...")
+            self.append_result("Use the slider to adjust HPF frequency and click 'Re-detect' to update.")
+            onset_detection.plot_envelope_with_onsets_interactive(
+                wav_path, y, sr,
+                initial_hp_cutoff=high_freq_min,
+                diff_threshold_std=diff_threshold_std,
+                min_interval_ms=50.0,
                 title=f"/t/ Burst Onset Detection - {os.path.basename(wav_path)}",
-                envelope_type="RMS Envelope (high-freq)"
+                detection_type="t_burst"
             )
             
             self.update_status("Detection complete!", 'green')

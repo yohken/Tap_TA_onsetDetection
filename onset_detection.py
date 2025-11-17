@@ -17,8 +17,9 @@ import numpy as np
 import scipy.signal
 import librosa
 from textgrid import TextGrid
-from typing import Optional
+from typing import Optional, Callable
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider, Button
 
 
 def compute_rms_envelope(
@@ -629,6 +630,211 @@ def plot_envelope_with_onsets(
     fig.canvas.mpl_connect('scroll_event', on_scroll)
     
     plt.tight_layout()
+    plt.show()
+
+
+def plot_envelope_with_onsets_interactive(
+    wav_path: str,
+    y: np.ndarray,
+    sr: int,
+    initial_hp_cutoff: float = 500.0,
+    diff_threshold_std: float = 2.0,
+    min_interval_ms: float = 50.0,
+    title: str = "",
+    detection_type: str = "tap",
+) -> None:
+    """
+    Plot waveform, envelope, and detected onsets with interactive HPF frequency control.
+    
+    Features:
+    - Interactive slider to adjust HPF cutoff frequency
+    - Re-detect button to recompute onsets with new frequency
+    - X-axis zoom using mouse wheel (inherited from plot_envelope_with_onsets)
+    
+    Args:
+        wav_path: Path to the WAV file (for re-detection).
+        y: audio signal.
+        sr: sampling rate.
+        initial_hp_cutoff: Initial high-pass filter cutoff frequency in Hz.
+        diff_threshold_std: Threshold for onset detection (mean + k*std).
+        min_interval_ms: Minimum interval between onsets in milliseconds.
+        title: optional plot title.
+        detection_type: Type of detection ("tap" or "t_burst").
+    """
+    # Initial detection
+    if detection_type == "tap":
+        env, times = compute_rms_envelope(
+            y, sr, 
+            band=(initial_hp_cutoff, None)
+        )
+        onset_times = detect_onsets_from_envelope(
+            env, times,
+            diff_threshold_std=diff_threshold_std,
+            min_interval_ms=min_interval_ms
+        )
+    else:  # t_burst
+        env, times = compute_rms_envelope(
+            y, sr,
+            band=(initial_hp_cutoff, None)
+        )
+        onset_times = detect_onsets_from_envelope(
+            env, times,
+            diff_threshold_std=diff_threshold_std,
+            min_interval_ms=min_interval_ms
+        )
+    
+    # Create figure with extra space at bottom for widgets
+    fig = plt.figure(figsize=(12, 8))
+    
+    # Create subplots for waveform and envelope
+    ax1 = plt.subplot2grid((4, 1), (0, 0), rowspan=2)
+    ax2 = plt.subplot2grid((4, 1), (2, 0), rowspan=2, sharex=ax1)
+    
+    # Initial plot
+    time_axis = np.arange(len(y)) / sr
+    waveform_line, = ax1.plot(time_axis, y, alpha=0.5, linewidth=0.5, color='blue')
+    ax1.set_ylabel('Amplitude')
+    ax1.set_title(title if title else 'Audio Waveform and Detected Onsets')
+    ax1.grid(True, alpha=0.3)
+    
+    # Store onset lines for updating
+    onset_lines_ax1 = []
+    for onset_t in onset_times:
+        line = ax1.axvline(x=onset_t, color='r', linestyle='--', alpha=0.7, linewidth=1.5)
+        onset_lines_ax1.append(line)
+    
+    # Plot envelope
+    envelope_line, = ax2.plot(times, env, label=f'RMS Envelope (HP {initial_hp_cutoff:.0f} Hz)', linewidth=1.5)
+    ax2.set_xlabel('Time (s)')
+    ax2.set_ylabel('Envelope')
+    ax2.grid(True, alpha=0.3)
+    
+    onset_lines_ax2 = []
+    for onset_t in onset_times:
+        line = ax2.axvline(x=onset_t, color='r', linestyle='--', alpha=0.7, linewidth=1.5)
+        onset_lines_ax2.append(line)
+    
+    legend = ax2.legend()
+    
+    # Store current onset count as text on ax1
+    onset_count_text = ax1.text(0.02, 0.98, f'Onsets detected: {len(onset_times)}',
+                                transform=ax1.transAxes, verticalalignment='top',
+                                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    
+    # Add slider for HPF frequency
+    plt.subplots_adjust(bottom=0.15)
+    ax_slider = plt.axes([0.15, 0.05, 0.65, 0.03])
+    slider = Slider(
+        ax_slider, 
+        'HPF Cutoff (Hz)',
+        100.0,  # min value
+        2000.0,  # max value
+        valinit=initial_hp_cutoff,
+        valstep=50.0
+    )
+    
+    # Add re-detect button
+    ax_button = plt.axes([0.82, 0.05, 0.12, 0.04])
+    button = Button(ax_button, 'Re-detect')
+    
+    # State to track current parameters
+    state = {'hp_cutoff': initial_hp_cutoff}
+    
+    def update_plot(new_hp_cutoff: float):
+        """Update the plot with new detection results."""
+        # Recompute envelope with new HPF cutoff
+        env_new, times_new = compute_rms_envelope(
+            y, sr, 
+            band=(new_hp_cutoff, None)
+        )
+        
+        # Detect onsets
+        onset_times_new = detect_onsets_from_envelope(
+            env_new, times_new,
+            diff_threshold_std=diff_threshold_std,
+            min_interval_ms=min_interval_ms
+        )
+        
+        # Update envelope plot
+        envelope_line.set_ydata(env_new)
+        envelope_line.set_xdata(times_new)
+        
+        # Update label
+        legend.texts[0].set_text(f'RMS Envelope (HP {new_hp_cutoff:.0f} Hz)')
+        
+        # Remove old onset lines
+        for line in onset_lines_ax1:
+            line.remove()
+        onset_lines_ax1.clear()
+        
+        for line in onset_lines_ax2:
+            line.remove()
+        onset_lines_ax2.clear()
+        
+        # Add new onset lines
+        for onset_t in onset_times_new:
+            line1 = ax1.axvline(x=onset_t, color='r', linestyle='--', alpha=0.7, linewidth=1.5)
+            onset_lines_ax1.append(line1)
+            line2 = ax2.axvline(x=onset_t, color='r', linestyle='--', alpha=0.7, linewidth=1.5)
+            onset_lines_ax2.append(line2)
+        
+        # Update onset count text
+        onset_count_text.set_text(f'Onsets detected: {len(onset_times_new)}')
+        
+        # Recompute y-axis limits for envelope
+        ax2.relim()
+        ax2.autoscale_view(scalex=False, scaley=True)
+        
+        fig.canvas.draw_idle()
+    
+    def on_button_click(event):
+        """Handle re-detect button click."""
+        new_hp_cutoff = slider.val
+        state['hp_cutoff'] = new_hp_cutoff
+        update_plot(new_hp_cutoff)
+    
+    button.on_clicked(on_button_click)
+    
+    # Add interactive X-axis zoom functionality
+    def on_scroll(event):
+        """Handle mouse wheel scroll for X-axis zoom."""
+        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_button:
+            return
+        
+        # Get the current axis
+        ax = event.inaxes
+        
+        # Get current X-axis limits
+        cur_xlim = ax.get_xlim()
+        xdata = event.xdata  # Mouse X position in data coordinates
+        
+        if xdata is None:
+            return
+        
+        # Zoom factor: scroll up (event.step > 0) zooms in, scroll down zooms out
+        zoom_factor = 1.2
+        if event.button == 'up':
+            scale_factor = 1 / zoom_factor
+        elif event.button == 'down':
+            scale_factor = zoom_factor
+        else:
+            return
+        
+        # Calculate new X-axis limits centered on mouse position
+        new_width = (cur_xlim[1] - cur_xlim[0]) * scale_factor
+        relx = (cur_xlim[1] - xdata) / (cur_xlim[1] - cur_xlim[0])
+        
+        new_xlim = [xdata - new_width * (1 - relx), xdata + new_width * relx]
+        
+        # Apply new X-axis limits to the scrolled axis
+        ax.set_xlim(new_xlim)
+        
+        # Redraw the canvas
+        fig.canvas.draw_idle()
+    
+    # Connect the scroll event
+    fig.canvas.mpl_connect('scroll_event', on_scroll)
+    
     plt.show()
 
 
