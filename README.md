@@ -145,7 +145,12 @@ Visualization helper for debugging onset detection.
   - Zoom is centered on your mouse cursor position
   - Both plots zoom together (synchronized X-axis)
 
-For detailed parameter documentation, see the docstrings in `onset_detection.py`.
+**NOTE:** For tap/click re-detection that complies with the Fujii method (10% threshold, backward search, linear interpolation), use `onset_hilbert` module instead:
+- `onset_hilbert.plot_waveform_and_envelope_interactive()` for interactive re-detection
+- `onset_hilbert.detect_tap_onsets_and_peaks()` or `detect_click_onsets_and_peaks()` for detection
+- See `onset_hilbert_README.md` for full documentation
+
+For detailed parameter documentation, see the docstrings in `onset_detection.py` and `onset_hilbert.py`.
 
 ## Demo
 
@@ -158,6 +163,26 @@ python onset_detection.py
 Note: The demo requires test audio files. See the `__main__` block in `onset_detection.py` for examples.
 
 ## Algorithm Details
+
+### Fujii Method (Recommended for Tap/Click Detection)
+
+The **Fujii method** is the primary onset detection method implemented in `onset_hilbert.py`. It provides:
+
+1. **High-pass filtering**: Remove low-frequency noise with zero-phase Butterworth filter
+2. **Hilbert envelope**: Compute instantaneous amplitude E(t) = |hilbert(y)|
+3. **Peak detection**: Find local maxima in envelope representing sound bursts
+4. **10% threshold per peak**: For each peak with amplitude Amax, set threshold = 0.1 × Amax
+5. **Backward search**: From each peak, search backward to find where envelope first crosses threshold
+6. **Linear interpolation**: For sub-sample precision, interpolate between samples at threshold crossing
+7. **Output**: Both onset time (10% crossing) and peak time
+
+**Key advantages:**
+- Sub-sample precision (< 0.1ms error at 48kHz)
+- Per-event adaptive threshold (not affected by global amplitude variations)
+- Zero-phase filtering preserves timing information
+- Operates on continuous waveform (no frame-based artifacts)
+
+**For re-detection with HPF changes, always use `onset_hilbert` module to ensure Fujii method compliance.**
 
 ### Metronome Onset Detection (New Hilbert-based Method)
 1. Load audio and resample to 48,000 Hz
@@ -172,6 +197,8 @@ Note: The demo requires test audio files. See the `__main__` block in `onset_det
 3. Calculate first-order difference to detect energy rises
 4. Apply threshold: mean + k*std of positive differences
 5. Find peaks exceeding threshold with minimum spacing
+
+**NOTE:** This RMS method does NOT include linear interpolation and is not Fujii-compliant. Use `onset_hilbert` for Fujii method.
 
 ### Tap Onset Detection (New Hilbert-based Method)
 1. Load audio and resample to 48,000 Hz

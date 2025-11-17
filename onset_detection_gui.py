@@ -22,6 +22,7 @@ import librosa
 import matplotlib
 import matplotlib.pyplot as plt
 import onset_detection
+import onset_hilbert
 import os
 
 # Configure matplotlib backend for GUI
@@ -165,36 +166,35 @@ class OnsetDetectionGUI:
             self.append_result(f"Processing file: {os.path.basename(wav_path)}")
             self.append_result("=" * 60)
             
-            # Load audio for interactive plotting
-            y, sr = librosa.load(wav_path, sr=None, mono=True)
+            # Initial detection with default parameters using Fujii method
+            hp_cutoff = 300.0
+            threshold_ratio = 0.1
+            min_distance_ms = 100.0
             
-            # Initial detection with default parameters
-            hp_cutoff = 500.0
-            diff_threshold_std = 2.0
-            min_interval_ms = 50.0
-            
-            onset_times = onset_detection.detect_tap_onsets_from_audio(
+            onset_times, peak_times = onset_hilbert.detect_tap_onsets_and_peaks(
                 wav_path,
-                hp_cutoff=hp_cutoff,
-                diff_threshold_std=diff_threshold_std,
-                min_interval_ms=min_interval_ms
+                hp_cutoff_hz=hp_cutoff,
+                threshold_ratio=threshold_ratio,
+                min_distance_ms=min_distance_ms
             )
             
             # Display results
-            self.append_result(f"\nDetected {len(onset_times)} tap onsets:")
-            for i, t in enumerate(onset_times, 1):
-                self.append_result(f"  {i}. {t:.3f} seconds")
+            self.append_result(f"\nDetected {len(onset_times)} tap onsets using Fujii method:")
+            for i, (ot, pt) in enumerate(zip(onset_times, peak_times), 1):
+                self.append_result(f"  {i}. onset={ot:.3f}s, peak={pt:.3f}s")
             
-            # Plot results with interactive controls
+            # Plot results with interactive controls using Fujii method
             self.append_result("\nGenerating interactive plot...")
             self.append_result("Use the slider to adjust HPF frequency and click 'Re-detect' to update.")
-            onset_detection.plot_envelope_with_onsets_interactive(
-                wav_path, y, sr,
-                initial_hp_cutoff=hp_cutoff,
-                diff_threshold_std=diff_threshold_std,
-                min_interval_ms=min_interval_ms,
-                title=f"Tap Onset Detection - {os.path.basename(wav_path)}",
-                detection_type="tap"
+            self.append_result("Re-detection uses Fujii method (10% threshold, backward search, linear interpolation).")
+            
+            onset_hilbert.plot_waveform_and_envelope_interactive(
+                wav_path,
+                initial_hp_cutoff_hz=hp_cutoff,
+                is_click=False,
+                threshold_ratio=threshold_ratio,
+                min_distance_ms=min_distance_ms,
+                title=f"Tap Onset Detection (Fujii Method) - {os.path.basename(wav_path)}"
             )
             
             self.update_status("Detection complete!", 'green')
@@ -244,6 +244,8 @@ class OnsetDetectionGUI:
             y, sr = librosa.load(wav_path, sr=None, mono=True)
             
             # Initial detection with default parameters
+            # Note: /t/ burst detection uses RMS envelope method from onset_detection
+            # as it's optimized for TextGrid-guided detection
             high_freq_min = 2000.0
             diff_threshold_std = 2.0
             
@@ -264,6 +266,7 @@ class OnsetDetectionGUI:
             # Plot results with interactive controls
             self.append_result("\nGenerating interactive plot...")
             self.append_result("Use the slider to adjust HPF frequency and click 'Re-detect' to update.")
+            self.append_result("Note: /t/ burst uses RMS envelope method (not Fujii method).")
             onset_detection.plot_envelope_with_onsets_interactive(
                 wav_path, y, sr,
                 initial_hp_cutoff=high_freq_min,

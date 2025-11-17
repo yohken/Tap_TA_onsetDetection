@@ -7,6 +7,19 @@ Onset detection module for three types of audio signals:
 This module provides clean, well-documented Python code for onset detection
 using standard DSP techniques (no machine learning).
 
+IMPORTANT NOTE FOR RE-DETECTION:
+- The interactive plotting function plot_envelope_with_onsets_interactive in this module
+  uses RMS envelope + derivative-based detection.
+- It does NOT implement the Fujii method (10% threshold, backward search, linear interpolation).
+- For re-detection that complies with the Fujii method, use onset_hilbert module instead:
+    * onset_hilbert.plot_waveform_and_envelope_interactive() for interactive re-detection
+    * onset_hilbert.detect_tap_onsets_and_peaks() or detect_click_onsets_and_peaks() for detection
+
+This module remains useful for:
+- /t/ burst detection with TextGrid guidance (detect_t_burst_onsets_from_mfa)
+- Metronome onset generation (get_click_onsets_from_bpm)
+- Alternative detection methods for comparison purposes
+
 Target Python version: 3.10+
 Dependencies: numpy, scipy, librosa, textgrid
 """
