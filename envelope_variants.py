@@ -43,6 +43,10 @@ def compute_hilbert_envelope_variant(
     Returns:
         env: Hilbert envelope, same length as y.
     """
+    # Handle empty signal
+    if len(y) == 0:
+        return np.array([])
+
     # Apply optional high-pass filter
     if hpf_cutoff is not None and hpf_cutoff > 0:
         sos = butter(4, hpf_cutoff, btype='hp', fs=sr, output='sos')
