@@ -402,6 +402,236 @@ def plot_waveform_and_envelope(
     plt.show()
 
 
+def plot_waveform_and_envelope_interactive(
+    wav_path: str,
+    *,
+    initial_hp_cutoff_hz: float | None = 300.0,
+    is_click: bool = False,
+    threshold_ratio: float = 0.1,
+    min_distance_ms: float = 100.0,
+    smooth_ms: float | None = 0.5,
+    title: str = "",
+) -> None:
+    """
+    Interactive plotting with HPF slider and re-detect button using Fujii method.
+    
+    This function provides a GUI with:
+    - Interactive slider to adjust HPF cutoff frequency (100-2000 Hz)
+    - Re-detect button to recompute onsets with new HPF frequency
+    - X-axis zoom using mouse wheel
+    
+    The re-detection ALWAYS uses the Fujii method:
+    1. Apply highpass_filter with new cutoff
+    2. Compute hilbert_envelope
+    3. Run detect_onsets_and_peaks_from_envelope (10% threshold, backward search, linear interpolation)
+    
+    Args:
+        wav_path: path to a mono WAV file (click or tap).
+        initial_hp_cutoff_hz: starting HPF cutoff in Hz
+                              (e.g., 1000 Hz for clicks, 300 Hz for taps).
+        is_click: if True, uses different default cutoff.
+        threshold_ratio: onset threshold as fraction of local peak (default 0.1 = 10%).
+        min_distance_ms: minimum distance between peaks in milliseconds.
+        smooth_ms: envelope smoothing window in milliseconds.
+        title: optional plot title.
+    """
+    from matplotlib.widgets import Slider, Button
+    
+    # Set initial cutoff based on is_click if not specified
+    if initial_hp_cutoff_hz is None:
+        initial_hp_cutoff_hz = 1000.0 if is_click else 300.0
+    
+    hp_cutoff_hz = initial_hp_cutoff_hz
+    
+    # Load WAV once
+    data, sr = sf.read(wav_path)
+    if data.ndim > 1:
+        data = np.mean(data, axis=1)
+    
+    # Initial detection
+    y_filt = highpass_filter(data, sr, hp_cutoff_hz)
+    env = hilbert_envelope(y_filt, sr, smooth_ms=smooth_ms)
+    onset_times, peak_times = detect_onsets_and_peaks_from_envelope(
+        env, sr,
+        threshold_ratio=threshold_ratio,
+        min_distance_ms=min_distance_ms
+    )
+    
+    # Create figure with extra space at bottom for widgets
+    fig = plt.figure(figsize=(12, 8))
+    
+    # Create subplots for waveform and envelope
+    ax1 = plt.subplot2grid((4, 1), (0, 0), rowspan=2)
+    ax2 = plt.subplot2grid((4, 1), (2, 0), rowspan=2, sharex=ax1)
+    
+    # Initial plot - waveform
+    time_axis = np.arange(len(y_filt)) / sr
+    waveform_line, = ax1.plot(time_axis, y_filt, alpha=0.5, linewidth=0.5, color='blue', label='Waveform')
+    ax1.set_ylabel('Amplitude')
+    if title:
+        ax1.set_title(title)
+    else:
+        ax1.set_title(f'Fujii Method Detection - {wav_path}')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc='upper right')
+    
+    # Store onset and peak lines for updating
+    onset_lines_ax1 = []
+    peak_lines_ax1 = []
+    for i, ot in enumerate(onset_times):
+        line = ax1.axvline(x=ot, color='g', linestyle='--', alpha=0.7, linewidth=1.5,
+                          label='Onsets' if i == 0 else None)
+        onset_lines_ax1.append(line)
+    for i, pt in enumerate(peak_times):
+        line = ax1.axvline(x=pt, color='r', linestyle=':', alpha=0.7, linewidth=1.5,
+                          label='Peaks' if i == 0 else None)
+        peak_lines_ax1.append(line)
+    
+    # Update legend after adding markers
+    if len(onset_times) > 0 or len(peak_times) > 0:
+        ax1.legend(loc='upper right')
+    
+    # Plot envelope
+    env_label = f'Hilbert envelope (HPF = {hp_cutoff_hz:.0f} Hz)' if hp_cutoff_hz and hp_cutoff_hz > 0 else 'Hilbert envelope (no HPF)'
+    envelope_line, = ax2.plot(time_axis, env, label=env_label, linewidth=1.5, color='orange')
+    ax2.set_xlabel('Time (s)')
+    ax2.set_ylabel('Envelope')
+    ax2.grid(True, alpha=0.3)
+    
+    onset_lines_ax2 = []
+    peak_lines_ax2 = []
+    for i, ot in enumerate(onset_times):
+        line = ax2.axvline(x=ot, color='g', linestyle='--', alpha=0.7, linewidth=1.5)
+        onset_lines_ax2.append(line)
+    for i, pt in enumerate(peak_times):
+        line = ax2.axvline(x=pt, color='r', linestyle=':', alpha=0.7, linewidth=1.5)
+        peak_lines_ax2.append(line)
+    
+    legend = ax2.legend(loc='upper right')
+    
+    # Store current onset count as text on ax1
+    onset_count_text = ax1.text(0.02, 0.98, f'Onsets detected: {len(onset_times)}',
+                                transform=ax1.transAxes, verticalalignment='top',
+                                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    
+    # Add slider for HPF frequency
+    plt.subplots_adjust(bottom=0.15)
+    ax_slider = plt.axes([0.15, 0.05, 0.65, 0.03])
+    slider = Slider(
+        ax_slider, 
+        'HPF Cutoff (Hz)',
+        100.0,  # min value
+        2000.0,  # max value
+        valinit=hp_cutoff_hz,
+        valstep=50.0
+    )
+    
+    # Add re-detect button
+    ax_button = plt.axes([0.82, 0.05, 0.12, 0.04])
+    button = Button(ax_button, 'Re-detect')
+    
+    def update_plot(new_hp_cutoff: float):
+        """Update the plot with new detection results using Fujii method."""
+        # Re-apply HPF with new cutoff
+        y_filt_new = highpass_filter(data, sr, new_hp_cutoff)
+        
+        # Recompute Hilbert envelope
+        env_new = hilbert_envelope(y_filt_new, sr, smooth_ms=smooth_ms)
+        
+        # Re-detect onsets and peaks using Fujii method
+        onset_times_new, peak_times_new = detect_onsets_and_peaks_from_envelope(
+            env_new, sr,
+            threshold_ratio=threshold_ratio,
+            min_distance_ms=min_distance_ms
+        )
+        
+        # Update waveform
+        waveform_line.set_ydata(y_filt_new)
+        
+        # Update envelope plot
+        envelope_line.set_ydata(env_new)
+        
+        # Update label
+        env_label_new = f'Hilbert envelope (HPF = {new_hp_cutoff:.0f} Hz)' if new_hp_cutoff and new_hp_cutoff > 0 else 'Hilbert envelope (no HPF)'
+        legend.texts[0].set_text(env_label_new)
+        
+        # Remove old onset and peak lines
+        for line in onset_lines_ax1:
+            line.remove()
+        onset_lines_ax1.clear()
+        for line in peak_lines_ax1:
+            line.remove()
+        peak_lines_ax1.clear()
+        
+        for line in onset_lines_ax2:
+            line.remove()
+        onset_lines_ax2.clear()
+        for line in peak_lines_ax2:
+            line.remove()
+        peak_lines_ax2.clear()
+        
+        # Add new onset and peak lines
+        for i, ot in enumerate(onset_times_new):
+            line1 = ax1.axvline(x=ot, color='g', linestyle='--', alpha=0.7, linewidth=1.5)
+            onset_lines_ax1.append(line1)
+            line2 = ax2.axvline(x=ot, color='g', linestyle='--', alpha=0.7, linewidth=1.5)
+            onset_lines_ax2.append(line2)
+        
+        for i, pt in enumerate(peak_times_new):
+            line1 = ax1.axvline(x=pt, color='r', linestyle=':', alpha=0.7, linewidth=1.5)
+            peak_lines_ax1.append(line1)
+            line2 = ax2.axvline(x=pt, color='r', linestyle=':', alpha=0.7, linewidth=1.5)
+            peak_lines_ax2.append(line2)
+        
+        # Update onset count text
+        onset_count_text.set_text(f'Onsets detected: {len(onset_times_new)}')
+        
+        # Recompute y-axis limits
+        ax1.relim()
+        ax1.autoscale_view(scalex=False, scaley=True)
+        ax2.relim()
+        ax2.autoscale_view(scalex=False, scaley=True)
+        
+        fig.canvas.draw_idle()
+    
+    def on_button_click(event):
+        """Handle re-detect button click."""
+        new_hp_cutoff = slider.val
+        update_plot(new_hp_cutoff)
+    
+    button.on_clicked(on_button_click)
+    
+    # Add interactive X-axis zoom functionality
+    def on_scroll(event):
+        """Handle mouse wheel scroll for X-axis zoom."""
+        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_button:
+            return
+        
+        ax = event.inaxes
+        cur_xlim = ax.get_xlim()
+        xdata = event.xdata
+        
+        if xdata is None:
+            return
+        
+        zoom_factor = 1.2
+        if event.button == 'up':
+            scale_factor = 1 / zoom_factor
+        elif event.button == 'down':
+            scale_factor = zoom_factor
+        else:
+            return
+        
+        new_width = (cur_xlim[1] - cur_xlim[0]) * scale_factor
+        relx = (cur_xlim[1] - xdata) / (cur_xlim[1] - cur_xlim[0])
+        new_xlim = [xdata - new_width * (1 - relx), xdata + new_width * relx]
+        ax.set_xlim(new_xlim)
+        fig.canvas.draw_idle()
+    
+    fig.canvas.mpl_connect('scroll_event', on_scroll)
+    plt.show()
+
+
 def interactive_hpf_tuning(
     wav_path: str,
     *,
