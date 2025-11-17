@@ -722,8 +722,8 @@ def plot_envelope_with_onsets_interactive(
                                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     # Add slider for HPF frequency
-    plt.subplots_adjust(bottom=0.15)
-    ax_slider = plt.axes([0.15, 0.05, 0.65, 0.03])
+    plt.subplots_adjust(bottom=0.20)
+    ax_slider = plt.axes([0.15, 0.10, 0.65, 0.03])
     slider = Slider(
         ax_slider, 
         'HPF Cutoff (Hz)',
