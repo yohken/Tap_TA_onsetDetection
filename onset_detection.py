@@ -736,7 +736,7 @@ def plot_envelope_with_onsets_interactive(
     
     # Add slider for HPF frequency
     plt.subplots_adjust(bottom=0.20)
-    ax_slider = plt.axes([0.15, 0.10, 0.65, 0.03])
+    ax_slider = plt.axes([0.15, 0.10, 0.60, 0.03])
     slider = Slider(
         ax_slider, 
         'HPF Cutoff (Hz)',
@@ -747,7 +747,7 @@ def plot_envelope_with_onsets_interactive(
     )
     
     # Add re-detect button
-    ax_button = plt.axes([0.82, 0.05, 0.12, 0.04])
+    ax_button = plt.axes([0.77, 0.05, 0.12, 0.04])
     button = Button(ax_button, 'Re-detect')
     
     # State to track current parameters
@@ -810,43 +810,147 @@ def plot_envelope_with_onsets_interactive(
     
     # Add interactive X-axis zoom functionality
     def on_scroll(event):
-        """Handle mouse wheel scroll for X-axis zoom."""
+        """Handle mouse wheel scroll for X-axis zoom or Y-axis zoom with modifier key."""
         if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_button:
             return
         
         # Get the current axis
         ax = event.inaxes
         
-        # Get current X-axis limits
-        cur_xlim = ax.get_xlim()
-        xdata = event.xdata  # Mouse X position in data coordinates
-        
-        if xdata is None:
-            return
-        
-        # Zoom factor: scroll up (event.step > 0) zooms in, scroll down zooms out
-        zoom_factor = 1.2
-        if event.button == 'up':
-            scale_factor = 1 / zoom_factor
-        elif event.button == 'down':
-            scale_factor = zoom_factor
+        # Check for Ctrl/Cmd key for Y-axis zoom
+        if event.key in ('control', 'ctrl', 'cmd', 'super'):
+            # Y-axis zoom
+            cur_ylim = ax.get_ylim()
+            ydata = event.ydata
+            
+            if ydata is None:
+                return
+            
+            zoom_factor = 1.2
+            if event.button == 'up':
+                scale_factor = 1 / zoom_factor
+            elif event.button == 'down':
+                scale_factor = zoom_factor
+            else:
+                return
+            
+            new_height = (cur_ylim[1] - cur_ylim[0]) * scale_factor
+            rely = (cur_ylim[1] - ydata) / (cur_ylim[1] - cur_ylim[0])
+            new_ylim = [ydata - new_height * (1 - rely), ydata + new_height * rely]
+            ax.set_ylim(new_ylim)
+            fig.canvas.draw_idle()
         else:
+            # X-axis zoom (default behavior)
+            # Get current X-axis limits
+            cur_xlim = ax.get_xlim()
+            xdata = event.xdata  # Mouse X position in data coordinates
+            
+            if xdata is None:
+                return
+            
+            # Zoom factor: scroll up (event.step > 0) zooms in, scroll down zooms out
+            zoom_factor = 1.2
+            if event.button == 'up':
+                scale_factor = 1 / zoom_factor
+            elif event.button == 'down':
+                scale_factor = zoom_factor
+            else:
+                return
+            
+            # Calculate new X-axis limits centered on mouse position
+            new_width = (cur_xlim[1] - cur_xlim[0]) * scale_factor
+            relx = (cur_xlim[1] - xdata) / (cur_xlim[1] - cur_xlim[0])
+            
+            new_xlim = [xdata - new_width * (1 - relx), xdata + new_width * relx]
+            
+            # Apply new X-axis limits to the scrolled axis
+            ax.set_xlim(new_xlim)
+            
+            # Redraw the canvas
+            fig.canvas.draw_idle()
+    
+    # Add pan functionality
+    pan_data = {'pressed': False, 'x0': None, 'y0': None, 'xlim0': None, 'ylim0': None, 'ax': None}
+    
+    def on_press(event):
+        """Handle mouse button press for panning."""
+        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_button:
+            return
+        if event.button != 1:  # Only left mouse button
             return
         
-        # Calculate new X-axis limits centered on mouse position
-        new_width = (cur_xlim[1] - cur_xlim[0]) * scale_factor
-        relx = (cur_xlim[1] - xdata) / (cur_xlim[1] - cur_xlim[0])
+        pan_data['pressed'] = True
+        pan_data['x0'] = event.xdata
+        pan_data['y0'] = event.ydata
+        pan_data['ax'] = event.inaxes
+        pan_data['xlim0'] = event.inaxes.get_xlim()
+        pan_data['ylim0'] = event.inaxes.get_ylim()
+    
+    def on_release(event):
+        """Handle mouse button release."""
+        pan_data['pressed'] = False
+    
+    def on_motion(event):
+        """Handle mouse motion for panning."""
+        if not pan_data['pressed']:
+            return
+        if event.inaxes != pan_data['ax']:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
         
-        new_xlim = [xdata - new_width * (1 - relx), xdata + new_width * relx]
+        dx = event.xdata - pan_data['x0']
+        dy = event.ydata - pan_data['y0']
         
-        # Apply new X-axis limits to the scrolled axis
-        ax.set_xlim(new_xlim)
+        xlim = pan_data['xlim0']
+        ylim = pan_data['ylim0']
         
-        # Redraw the canvas
+        pan_data['ax'].set_xlim([xlim[0] - dx, xlim[1] - dx])
+        pan_data['ax'].set_ylim([ylim[0] - dy, ylim[1] - dy])
         fig.canvas.draw_idle()
+    
+    def on_double_click(event):
+        """Handle double-click to auto-scale Y-axis to 85% of max value."""
+        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_button:
+            return
+        if event.dblclick:
+            ax = event.inaxes
+            
+            # Get the current x-axis limits
+            xlim = ax.get_xlim()
+            
+            # Find the visible data in the current x-range
+            if ax == ax1:
+                # For waveform
+                mask = (time_axis >= xlim[0]) & (time_axis <= xlim[1])
+                visible_data = y[mask]
+            elif ax == ax2:
+                # For envelope
+                mask = (times >= xlim[0]) & (times <= xlim[1])
+                visible_data = env[mask]
+            else:
+                return
+            
+            if len(visible_data) == 0:
+                return
+            
+            # Find max absolute value in visible range
+            max_val = np.max(np.abs(visible_data))
+            
+            if max_val == 0:
+                return
+            
+            # Set Y-axis so max value is at 85% of the display
+            target_max = max_val / 0.85
+            ax.set_ylim([-target_max, target_max])
+            fig.canvas.draw_idle()
     
     # Connect the scroll event
     fig.canvas.mpl_connect('scroll_event', on_scroll)
+    fig.canvas.mpl_connect('button_press_event', on_press)
+    fig.canvas.mpl_connect('button_release_event', on_release)
+    fig.canvas.mpl_connect('motion_notify_event', on_motion)
+    fig.canvas.mpl_connect('button_press_event', on_double_click)
     
     plt.show()
 
