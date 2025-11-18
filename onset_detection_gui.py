@@ -21,6 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 import librosa
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 import onset_detection
 import onset_hilbert
 import os
@@ -89,14 +90,14 @@ class OnsetDetectionGUI:
         )
         self.burst_button.grid(row=1, column=0, pady=10, padx=10)
         
-        # Click track generation button
-        self.click_button = ttk.Button(
+        # Export data button
+        self.export_button = ttk.Button(
             button_frame,
-            text="Generate Click Track",
-            command=self.generate_click_track,
+            text="Export Data",
+            command=self.export_data,
             width=30
         )
-        self.click_button.grid(row=2, column=0, pady=10, padx=10)
+        self.export_button.grid(row=2, column=0, pady=10, padx=10)
         
         # Status label
         self.status_label = ttk.Label(
@@ -286,13 +287,13 @@ class OnsetDetectionGUI:
             self.update_status("Error occurred", 'red')
             messagebox.showerror("Error", error_msg)
     
-    def generate_click_track(self):
-        """Handle click track generation with parameter input."""
+    def export_data(self):
+        """Handle data export with parameter input and file selection."""
         self.clear_results()
         
         # Create a dialog for input parameters
         dialog = tk.Toplevel(self.root)
-        dialog.title("Click Track Parameters")
+        dialog.title("Export Data Parameters")
         dialog.geometry("400x250")
         dialog.transient(self.root)
         dialog.grab_set()
@@ -331,7 +332,7 @@ class OnsetDetectionGUI:
         subdivision_combo.grid(row=2, column=1, pady=5)
         subdivision_combo.set("1 (quarter notes)")
         
-        result_container = {"onsets": None}
+        result_container = {"onsets": None, "params": {}}
         
         def on_generate():
             try:
@@ -346,6 +347,11 @@ class OnsetDetectionGUI:
                 result_container["onsets"] = onset_detection.get_click_onsets_from_bpm(
                     bpm, n_clicks, subdivision=subdivision
                 )
+                result_container["params"] = {
+                    "bpm": bpm,
+                    "n_clicks": n_clicks,
+                    "subdivision_text": subdivision_text
+                }
                 dialog.destroy()
                 
             except ValueError as e:
@@ -364,21 +370,62 @@ class OnsetDetectionGUI:
         # Process results if generated
         if result_container["onsets"] is not None:
             onset_times = result_container["onsets"]
-            bpm = float(bpm_var.get())
-            n_clicks = int(n_clicks_var.get())
-            subdivision_text = subdivision_var.get()
+            params = result_container["params"]
             
-            self.append_result(f"Click Track Generation")
-            self.append_result("=" * 60)
-            self.append_result(f"BPM: {bpm}")
-            self.append_result(f"Number of clicks: {n_clicks}")
-            self.append_result(f"Subdivision: {subdivision_text}")
-            self.append_result(f"\nGenerated {len(onset_times)} click onsets:")
-            for i, t in enumerate(onset_times, 1):
-                self.append_result(f"  {i}. {t:.3f} seconds")
+            # Open file save dialog
+            save_path = filedialog.asksaveasfilename(
+                title="Save Data File",
+                defaultextension=".txt",
+                filetypes=[
+                    ("Text files", "*.txt"),
+                    ("CSV files", "*.csv"),
+                    ("All files", "*.*")
+                ]
+            )
             
-            self.update_status("Click track generated!", 'green')
-            self.append_result("\n" + "=" * 60)
+            if not save_path:
+                self.update_status("Save cancelled", 'orange')
+                return
+            
+            try:
+                # Write onset times to file
+                
+                # Create header with metadata
+                header_lines = [
+                    f"# Click Track Onset Times",
+                    f"# BPM: {params['bpm']}",
+                    f"# Number of clicks: {params['n_clicks']}",
+                    f"# Subdivision: {params['subdivision_text']}",
+                    f"# Total onsets: {len(onset_times)}",
+                    f"#",
+                    f"# Format: onset_time (seconds)"
+                ]
+                
+                # Save data
+                with open(save_path, 'w') as f:
+                    f.write('\n'.join(header_lines) + '\n')
+                    np.savetxt(f, onset_times, fmt='%.6f')
+                
+                # Display results
+                self.append_result(f"Data Export Complete")
+                self.append_result("=" * 60)
+                self.append_result(f"BPM: {params['bpm']}")
+                self.append_result(f"Number of clicks: {params['n_clicks']}")
+                self.append_result(f"Subdivision: {params['subdivision_text']}")
+                self.append_result(f"\nExported {len(onset_times)} click onsets to:")
+                self.append_result(f"  {save_path}")
+                self.append_result(f"\nOnset times (seconds):")
+                for i, t in enumerate(onset_times, 1):
+                    self.append_result(f"  {i}. {t:.6f}")
+                
+                self.update_status("Data exported successfully!", 'green')
+                self.append_result("\n" + "=" * 60)
+                
+            except Exception as e:
+                error_msg = f"Error saving file: {str(e)}"
+                self.append_result(f"\nERROR: {error_msg}")
+                self.update_status("Error occurred", 'red')
+                messagebox.showerror("Error", error_msg)
 
 
 def main():
