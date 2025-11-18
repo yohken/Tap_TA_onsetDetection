@@ -736,7 +736,7 @@ def plot_envelope_with_onsets_interactive(
     
     # Add slider for HPF frequency
     plt.subplots_adjust(bottom=0.20)
-    ax_slider = plt.axes([0.15, 0.10, 0.60, 0.03])
+    ax_slider = plt.axes([0.15, 0.10, 0.55, 0.03])
     slider = Slider(
         ax_slider, 
         'HPF Cutoff (Hz)',
@@ -747,7 +747,7 @@ def plot_envelope_with_onsets_interactive(
     )
     
     # Add re-detect button
-    ax_button = plt.axes([0.77, 0.05, 0.12, 0.04])
+    ax_button = plt.axes([0.72, 0.10, 0.12, 0.04])
     button = Button(ax_button, 'Re-detect')
     
     # State to track current parameters
