@@ -516,7 +516,7 @@ def plot_waveform_and_envelope_interactive(
     
     # Add slider for HPF frequency
     plt.subplots_adjust(bottom=0.15)
-    ax_slider = plt.axes([0.15, 0.05, 0.60, 0.03])
+    ax_slider = plt.axes([0.15, 0.05, 0.55, 0.03])
     slider = Slider(
         ax_slider, 
         'HPF Cutoff (Hz)',
@@ -527,7 +527,7 @@ def plot_waveform_and_envelope_interactive(
     )
     
     # Add re-detect button
-    ax_button = plt.axes([0.77, 0.05, 0.12, 0.04])
+    ax_button = plt.axes([0.72, 0.05, 0.12, 0.04])
     button = Button(ax_button, 'Re-detect')
     
     def update_plot(new_hp_cutoff: float):
