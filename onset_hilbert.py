@@ -526,8 +526,8 @@ def plot_waveform_and_envelope_interactive(
         valstep=50.0
     )
     
-    # Add re-detect button
-    ax_button = plt.axes([0.72, 0.05, 0.12, 0.04])
+    # Add re-detect button (right-aligned)
+    ax_button = plt.axes([0.88, 0.05, 0.10, 0.04])
     button = Button(ax_button, 'Re-detect')
     
     def update_plot(new_hp_cutoff: float):
