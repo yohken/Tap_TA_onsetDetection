@@ -32,11 +32,14 @@ Note: tkinter is usually included with Python. If not, install it:
 Automatically detect /t/ burst onsets using both MFA TextGrid annotations and Hilbert-based detection:
 
 ```bash
-# Process single file with automatic MFA alignment
-python mfa_onset_pipeline.py speech.wav --run-mfa
+# Process single file (MFA alignment runs automatically)
+python mfa_onset_pipeline.py speech.wav
 
-# Process multiple files without MFA (if TextGrid files already exist)
+# Process multiple files (MFA alignment runs automatically)
 python mfa_onset_pipeline.py file1.wav file2.wav file3.wav
+
+# Process without MFA (if TextGrid files already exist)
+python mfa_onset_pipeline.py file1.wav --no-mfa
 
 # Process with custom parameters
 python mfa_onset_pipeline.py speech.wav \
@@ -45,17 +48,16 @@ python mfa_onset_pipeline.py speech.wav \
     --hilbert-threshold 0.15 \
     -o results/
 
-# Custom MFA alignment settings
+# Custom text content for MFA alignment (advanced)
 python mfa_onset_pipeline.py speech.wav \
-    --run-mfa \
     --text-content "ta ta ta" \
     --mfa-model english_us_arpa \
     --mfa-dictionary english_us_arpa
 ```
 
 **What it does**:
-- Accepts multiple WAV files as input
-- Automatically runs MFA alignment to generate TextGrid files (optional)
+- Accepts WAV files containing singing audio (Japanese "ta" syllables)
+- Automatically runs MFA alignment to generate TextGrid files
 - Detects /t/ burst onsets using MFA TextGrid annotations (high-frequency RMS envelope method)
 - Detects onsets using Hilbert-based method (Fujii method)
 - Creates comparison plots showing both methods with waveform, envelopes, and markers
@@ -71,6 +73,7 @@ python mfa_onset_pipeline.py speech.wav \
 - `pipeline_*.log`: Detailed processing log
 
 **Default Parameters**:
+- Text content: "ta" (automatically set for /t/ burst detection)
 - MFA: high_freq_min=2000 Hz, frame=5ms, hop=1ms, threshold_std=2.0
 - Hilbert: sr=48000 Hz, hp_cutoff=500 Hz, threshold_ratio=0.1, lookback_points=74, min_interval=50ms
 

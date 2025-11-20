@@ -79,7 +79,8 @@ All requirements from the problem statement have been implemented:
 - File validation with clear error messages
 
 ✅ **Requirement 2**: Automatic MFA alignment
-- Optional `--run-mfa` flag to trigger automatic alignment
+- MFA alignment runs by default (automatically)
+- Optional `--no-mfa` flag to skip alignment if TextGrid files already exist
 - Creates temporary corpus structure
 - Generates text files for alignment
 - Executes `mfa align` command
@@ -160,11 +161,11 @@ All parameters can be customized via command-line arguments.
 ## Usage Examples
 
 ```bash
-# Basic usage (Hilbert only)
+# Basic usage (MFA runs automatically if MFA is installed)
 python mfa_onset_pipeline.py file1.wav file2.wav file3.wav
 
-# With automatic MFA alignment
-python mfa_onset_pipeline.py speech.wav --run-mfa
+# Without MFA alignment (if TextGrid files already exist)
+python mfa_onset_pipeline.py speech.wav --no-mfa
 
 # Custom parameters
 python mfa_onset_pipeline.py speech.wav \

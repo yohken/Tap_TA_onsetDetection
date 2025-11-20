@@ -761,15 +761,18 @@ class MFAOnsetPipeline:
 def main():
     """Main entry point for command-line usage"""
     parser = argparse.ArgumentParser(
-        description="MFA-based Onset Detection Pipeline",
+        description="MFA-based Onset Detection Pipeline - Automatically detects /t/ bursts from singing audio",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example usage:
-  # Process single file with MFA
-  python mfa_onset_pipeline.py file1.wav --run-mfa
+  # Process single file (MFA runs automatically)
+  python mfa_onset_pipeline.py file1.wav
   
-  # Process multiple files without MFA
+  # Process multiple files (MFA runs automatically)
   python mfa_onset_pipeline.py file1.wav file2.wav file3.wav
+  
+  # Process without MFA (if TextGrid files already exist)
+  python mfa_onset_pipeline.py file1.wav --no-mfa
   
   # Process with custom parameters
   python mfa_onset_pipeline.py file.wav --mfa-high-freq 2500 --hilbert-hp-cutoff 600
@@ -784,14 +787,14 @@ Example usage:
         'wav_files',
         nargs='+',
         type=Path,
-        help='WAV files to process'
+        help='WAV files containing singing audio to process'
     )
     
     # MFA options
     parser.add_argument(
-        '--run-mfa',
+        '--no-mfa',
         action='store_true',
-        help='Run MFA alignment to generate TextGrid files'
+        help='Skip MFA alignment (use if TextGrid files already exist in output directory)'
     )
     parser.add_argument(
         '--mfa-model',
@@ -806,7 +809,7 @@ Example usage:
     parser.add_argument(
         '--text-content',
         default='ta',
-        help='Text content for MFA alignment (default: ta)'
+        help='Text content for MFA alignment - automatically set for /t/ burst detection (default: ta)'
     )
     
     # MFA detection parameters
@@ -923,9 +926,11 @@ Example usage:
     
     # Process files
     print(f"Processing {len(wav_files)} file(s)...")
+    # By default, run MFA unless --no-mfa is specified
+    run_mfa = not args.no_mfa
     results = pipeline.process_multiple_files(
         wav_files,
-        run_mfa=args.run_mfa,
+        run_mfa=run_mfa,
         text_content=args.text_content
     )
     
