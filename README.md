@@ -176,14 +176,19 @@ Detect /t/ burst onsets using MFA TextGrid and high-frequency energy analysis.
 Visualization helper for debugging onset detection.
 
 **Interactive Features (GUI Mode):**
+- **Multiple File Selection**: Select multiple WAV files to process sequentially
 - **HPF Frequency Slider**: Adjust High-Pass Filter cutoff frequency (100-2000 Hz) after initial detection
 - **Re-detect Button**: Recompute onset detection with new HPF frequency without restarting
+- **Marker Deletion**: Cmd+Shift+Click (Mac) or Ctrl+Shift+Click (Windows/Linux) to delete false positive markers
+- **Export Button**: Save onset/peak data to CSV via file dialog
+- **Next Button**: Navigate to next file in batch or open new file dialog
 - **Onset Count Display**: Real-time display of number of detected onsets
 - **X-axis Zoom**: Use mouse wheel (or trackpad pinch) to zoom in/out on the time axis
   - Scroll UP or pinch OUT to zoom in
   - Scroll DOWN or pinch IN to zoom out
   - Zoom is centered on your mouse cursor position
   - Both plots zoom together (synchronized X-axis)
+  - Zoom is preserved when deleting markers
 
 **NOTE:** For tap/click re-detection that complies with the Fujii method (10% threshold, backward search, linear interpolation), use `onset_hilbert` module instead:
 - `onset_hilbert.plot_waveform_and_envelope_interactive()` for interactive re-detection

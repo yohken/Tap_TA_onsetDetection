@@ -411,6 +411,9 @@ def plot_waveform_and_envelope_interactive(
     min_distance_ms: float = 100.0,
     smooth_ms: float | None = 0.5,
     title: str = "",
+    on_next_callback: callable | None = None,
+    enable_marker_deletion: bool = False,
+    enable_export: bool = False,
 ) -> None:
     """
     Interactive plotting with HPF slider and re-detect button using Fujii method.
@@ -419,6 +422,9 @@ def plot_waveform_and_envelope_interactive(
     - Interactive slider to adjust HPF cutoff frequency (100-2000 Hz)
     - Re-detect button to recompute onsets with new HPF frequency
     - X-axis zoom using mouse wheel
+    - Optional: Cmd+Shift+Click to delete onset/peak markers
+    - Optional: Export button to save data to CSV
+    - Optional: Next button to navigate to next file
     
     The re-detection ALWAYS uses the Fujii method:
     1. Apply highpass_filter with new cutoff
@@ -434,8 +440,13 @@ def plot_waveform_and_envelope_interactive(
         min_distance_ms: minimum distance between peaks in milliseconds.
         smooth_ms: envelope smoothing window in milliseconds.
         title: optional plot title.
+        on_next_callback: optional callback to be called when Next button is clicked.
+        enable_marker_deletion: if True, enable Cmd+Shift+Click to delete markers.
+        enable_export: if True, add Export button to save data to CSV.
     """
     from matplotlib.widgets import Slider, Button
+    from tkinter import filedialog
+    import tkinter as tk
     
     # Set initial cutoff based on is_click if not specified
     if initial_hp_cutoff_hz is None:
@@ -516,7 +527,7 @@ def plot_waveform_and_envelope_interactive(
     
     # Add slider for HPF frequency
     plt.subplots_adjust(bottom=0.15)
-    ax_slider = plt.axes([0.15, 0.05, 0.55, 0.03])
+    ax_slider = plt.axes([0.15, 0.05, 0.40, 0.03])
     slider = Slider(
         ax_slider, 
         'HPF Cutoff (Hz)',
@@ -526,12 +537,39 @@ def plot_waveform_and_envelope_interactive(
         valstep=50.0
     )
     
-    # Add re-detect button (right-aligned)
-    ax_button = plt.axes([0.88, 0.05, 0.10, 0.04])
-    button = Button(ax_button, 'Re-detect')
+    # Add buttons
+    button_width = 0.10
+    button_height = 0.04
+    button_y = 0.05
     
-    def update_plot(new_hp_cutoff: float):
+    # Re-detect button
+    ax_redetect = plt.axes([0.58, button_y, button_width, button_height])
+    button_redetect = Button(ax_redetect, 'Re-detect')
+    
+    # Export button (if enabled)
+    if enable_export:
+        ax_export = plt.axes([0.70, button_y, button_width, button_height])
+        button_export = Button(ax_export, 'Export')
+    
+    # Next button (if callback provided)
+    if on_next_callback is not None:
+        ax_next = plt.axes([0.82, button_y, button_width, button_height])
+        button_next = Button(ax_next, 'Next')
+    
+    # Store current onset/peak times for manual editing
+    current_onsets = list(onset_times)
+    current_peaks = list(peak_times)
+    # Store current onset/peak times for manual editing
+    current_onsets = list(onset_times)
+    current_peaks = list(peak_times)
+    
+    def update_plot(new_hp_cutoff: float, preserve_xlim: bool = False):
         """Update the plot with new detection results using Fujii method."""
+        # Save current xlim if needed
+        if preserve_xlim:
+            xlim_ax1 = ax1.get_xlim()
+            xlim_ax2 = ax2.get_xlim()
+        
         # Re-apply HPF with new cutoff
         y_filt_new = highpass_filter(data, sr, new_hp_cutoff)
         
@@ -544,6 +582,12 @@ def plot_waveform_and_envelope_interactive(
             threshold_ratio=threshold_ratio,
             min_distance_ms=min_distance_ms
         )
+        
+        # Update current lists
+        current_onsets.clear()
+        current_onsets.extend(onset_times_new)
+        current_peaks.clear()
+        current_peaks.extend(peak_times_new)
         
         # Update waveform
         waveform_line.set_ydata(y_filt_new)
@@ -571,40 +615,206 @@ def plot_waveform_and_envelope_interactive(
         peak_lines_ax2.clear()
         
         # Add new onset and peak lines
-        for i, ot in enumerate(onset_times_new):
+        for i, ot in enumerate(current_onsets):
             line1 = ax1.axvline(x=ot, color='g', linestyle='--', alpha=0.7, linewidth=1.5)
             onset_lines_ax1.append(line1)
             line2 = ax2.axvline(x=ot, color='g', linestyle='--', alpha=0.7, linewidth=1.5)
             onset_lines_ax2.append(line2)
         
-        for i, pt in enumerate(peak_times_new):
+        for i, pt in enumerate(current_peaks):
             line1 = ax1.axvline(x=pt, color='r', linestyle=':', alpha=0.7, linewidth=1.5)
             peak_lines_ax1.append(line1)
             line2 = ax2.axvline(x=pt, color='r', linestyle=':', alpha=0.7, linewidth=1.5)
             peak_lines_ax2.append(line2)
         
         # Update onset count text
-        onset_count_text.set_text(f'Onsets detected: {len(onset_times_new)}')
+        onset_count_text.set_text(f'Onsets detected: {len(current_onsets)}')
         
-        # Recompute y-axis limits
-        ax1.relim()
-        ax1.autoscale_view(scalex=False, scaley=True)
-        ax2.relim()
-        ax2.autoscale_view(scalex=False, scaley=True)
+        # Restore xlim if needed
+        if preserve_xlim:
+            ax1.set_xlim(xlim_ax1)
+            ax2.set_xlim(xlim_ax2)
+        else:
+            # Recompute y-axis limits
+            ax1.relim()
+            ax1.autoscale_view(scalex=False, scaley=True)
+            ax2.relim()
+            ax2.autoscale_view(scalex=False, scaley=True)
         
         fig.canvas.draw_idle()
     
-    def on_button_click(event):
+    def refresh_markers(preserve_xlim: bool = True):
+        """Refresh marker display without re-detection."""
+        # Save current xlim if needed
+        if preserve_xlim:
+            xlim_ax1 = ax1.get_xlim()
+            xlim_ax2 = ax2.get_xlim()
+        
+        # Remove old onset and peak lines
+        for line in onset_lines_ax1:
+            line.remove()
+        onset_lines_ax1.clear()
+        for line in peak_lines_ax1:
+            line.remove()
+        peak_lines_ax1.clear()
+        
+        for line in onset_lines_ax2:
+            line.remove()
+        onset_lines_ax2.clear()
+        for line in peak_lines_ax2:
+            line.remove()
+        peak_lines_ax2.clear()
+        
+        # Add new onset and peak lines
+        for i, ot in enumerate(current_onsets):
+            line1 = ax1.axvline(x=ot, color='g', linestyle='--', alpha=0.7, linewidth=1.5)
+            onset_lines_ax1.append(line1)
+            line2 = ax2.axvline(x=ot, color='g', linestyle='--', alpha=0.7, linewidth=1.5)
+            onset_lines_ax2.append(line2)
+        
+        for i, pt in enumerate(current_peaks):
+            line1 = ax1.axvline(x=pt, color='r', linestyle=':', alpha=0.7, linewidth=1.5)
+            peak_lines_ax1.append(line1)
+            line2 = ax2.axvline(x=pt, color='r', linestyle=':', alpha=0.7, linewidth=1.5)
+            peak_lines_ax2.append(line2)
+        
+        # Update onset count text
+        onset_count_text.set_text(f'Onsets detected: {len(current_onsets)}')
+        
+        # Restore xlim if needed
+        if preserve_xlim:
+            ax1.set_xlim(xlim_ax1)
+            ax2.set_xlim(xlim_ax2)
+        
+        fig.canvas.draw_idle()
+    
+    def on_redetect_click(event):
         """Handle re-detect button click."""
         new_hp_cutoff = slider.val
-        update_plot(new_hp_cutoff)
+        update_plot(new_hp_cutoff, preserve_xlim=False)
     
-    button.on_clicked(on_button_click)
+    button_redetect.on_clicked(on_redetect_click)
+    
+    def on_export_click(event):
+        """Handle export button click."""
+        # Create a hidden tkinter root window for file dialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        # Get default filename
+        import os
+        default_name = os.path.splitext(os.path.basename(wav_path))[0] + '_onsets.csv'
+        
+        # Show save file dialog
+        file_path = filedialog.asksaveasfilename(
+            title="Export Onset/Peak Data",
+            defaultextension=".csv",
+            initialfile=default_name,
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            # Save data
+            save_onsets_and_peaks_csv(
+                file_path,
+                np.array(current_onsets),
+                np.array(current_peaks),
+                label="tap" if not is_click else "click"
+            )
+            print(f"Data exported to: {file_path}")
+    
+    if enable_export:
+        button_export.on_clicked(on_export_click)
+    
+    def on_next_click(event):
+        """Handle next button click."""
+        plt.close(fig)
+        if on_next_callback is not None:
+            on_next_callback()
+    
+    if on_next_callback is not None:
+        button_next.on_clicked(on_next_click)
+    
+    def on_marker_click(event):
+        """Handle click events for marker deletion."""
+        if not enable_marker_deletion:
+            return
+        
+        # Check for Cmd+Shift or Ctrl+Shift modifiers
+        if event.inaxes not in (ax1, ax2):
+            return
+        
+        # Matplotlib provides the key as a string, with modifiers as prefixes
+        # e.g., 'shift+cmd+button', or via event.key
+        # Check for both shift and cmd/ctrl modifiers
+        key_str = str(event.key) if event.key else ""
+        has_shift = 'shift' in key_str.lower()
+        has_command = any(mod in key_str.lower() for mod in ['cmd', 'super', 'ctrl', 'control'])
+        
+        # Also check the button event modifiers if available
+        if hasattr(event, 'modifiers'):
+            mods = event.modifiers
+            has_shift = has_shift or 'shift' in str(mods).lower()
+            has_command = has_command or any(mod in str(mods).lower() for mod in ['cmd', 'super', 'ctrl', 'control'])
+        
+        if not (has_command and has_shift):
+            return
+        
+        if event.xdata is None:
+            return
+        
+        click_time = event.xdata
+        threshold = 0.05  # 50ms threshold for clicking near a marker
+        
+        # Find nearest onset
+        nearest_onset_idx = None
+        nearest_onset_dist = float('inf')
+        for idx, ot in enumerate(current_onsets):
+            dist = abs(ot - click_time)
+            if dist < nearest_onset_dist:
+                nearest_onset_dist = dist
+                nearest_onset_idx = idx
+        
+        # Find nearest peak
+        nearest_peak_idx = None
+        nearest_peak_dist = float('inf')
+        for idx, pt in enumerate(current_peaks):
+            dist = abs(pt - click_time)
+            if dist < nearest_peak_dist:
+                nearest_peak_dist = dist
+                nearest_peak_idx = idx
+        
+        # Delete the nearest marker if within threshold
+        if nearest_onset_dist < threshold and nearest_onset_dist <= nearest_peak_dist:
+            # Delete onset
+            deleted_onset = current_onsets[nearest_onset_idx]
+            del current_onsets[nearest_onset_idx]
+            # Also delete corresponding peak if it exists
+            if nearest_onset_idx < len(current_peaks):
+                del current_peaks[nearest_onset_idx]
+            refresh_markers(preserve_xlim=True)
+            print(f"Deleted onset at {deleted_onset:.3f}s")
+        elif nearest_peak_dist < threshold:
+            # Delete peak and corresponding onset
+            deleted_peak = current_peaks[nearest_peak_idx]
+            del current_peaks[nearest_peak_idx]
+            if nearest_peak_idx < len(current_onsets):
+                del current_onsets[nearest_peak_idx]
+            refresh_markers(preserve_xlim=True)
+            print(f"Deleted peak at {deleted_peak:.3f}s")
     
     # Add interactive X-axis zoom functionality
     def on_scroll(event):
         """Handle mouse wheel scroll for X-axis zoom or Y-axis zoom with modifier key."""
-        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_button:
+        # Check if we're in a button or slider area
+        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_redetect:
+            return
+        if enable_export and event.inaxes == ax_export:
+            return
+        if on_next_callback is not None and event.inaxes == ax_next:
             return
         
         ax = event.inaxes
@@ -658,7 +868,12 @@ def plot_waveform_and_envelope_interactive(
     
     def on_press(event):
         """Handle mouse button press for panning."""
-        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_button:
+        # Check if we're in a button or slider area
+        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_redetect:
+            return
+        if enable_export and event.inaxes == ax_export:
+            return
+        if on_next_callback is not None and event.inaxes == ax_next:
             return
         if event.button != 1:  # Only left mouse button
             return
@@ -695,7 +910,12 @@ def plot_waveform_and_envelope_interactive(
     
     def on_double_click(event):
         """Handle double-click to auto-scale Y-axis to 85% of max value."""
-        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_button:
+        # Check if we're in a button or slider area
+        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_redetect:
+            return
+        if enable_export and event.inaxes == ax_export:
+            return
+        if on_next_callback is not None and event.inaxes == ax_next:
             return
         if event.dblclick:
             ax = event.inaxes
@@ -705,13 +925,15 @@ def plot_waveform_and_envelope_interactive(
             
             # Find the visible data in the current x-range
             if ax == ax1:
-                # For waveform
+                # For waveform - get from the line
+                visible_data = waveform_line.get_ydata()
                 mask = (time_axis >= xlim[0]) & (time_axis <= xlim[1])
-                visible_data = y_filt[mask]
+                visible_data = visible_data[mask]
             elif ax == ax2:
-                # For envelope
+                # For envelope - get from the line
+                visible_data = envelope_line.get_ydata()
                 mask = (time_axis >= xlim[0]) & (time_axis <= xlim[1])
-                visible_data = env[mask]
+                visible_data = visible_data[mask]
             else:
                 return
             
@@ -734,6 +956,11 @@ def plot_waveform_and_envelope_interactive(
     fig.canvas.mpl_connect('button_release_event', on_release)
     fig.canvas.mpl_connect('motion_notify_event', on_motion)
     fig.canvas.mpl_connect('button_press_event', on_double_click)
+    
+    # Add marker deletion click handler if enabled
+    if enable_marker_deletion:
+        fig.canvas.mpl_connect('button_press_event', on_marker_click)
+    
     plt.show()
 
 
