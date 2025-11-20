@@ -7,6 +7,7 @@ A Python module for onset detection in audio signals, specifically designed for 
 
 ## Features
 
+- **MFA-based Onset Detection Pipeline**: Comprehensive pipeline combining Montreal Forced Aligner (MFA) TextGrid annotations with Hilbert-based detection for /t/ burst onset analysis
 - **GUI Application**: Easy-to-use graphical interface with file selection dialogs and automatic plotting
 - **Envelope Comparison Framework**: Systematic comparison of onset detection variants with quantitative metrics
 - Clean, well-documented Python code using standard DSP techniques (no machine learning)
@@ -26,7 +27,56 @@ Note: tkinter is usually included with Python. If not, install it:
 
 ## Quick Start
 
-### Envelope Comparison (NEW)
+### MFA-based Onset Detection Pipeline (NEW)
+
+Automatically detect /t/ burst onsets using both MFA TextGrid annotations and Hilbert-based detection:
+
+```bash
+# Process single file with automatic MFA alignment
+python mfa_onset_pipeline.py speech.wav --run-mfa
+
+# Process multiple files without MFA (if TextGrid files already exist)
+python mfa_onset_pipeline.py file1.wav file2.wav file3.wav
+
+# Process with custom parameters
+python mfa_onset_pipeline.py speech.wav \
+    --mfa-high-freq 2500 \
+    --hilbert-hp-cutoff 600 \
+    --hilbert-threshold 0.15 \
+    -o results/
+
+# Custom MFA alignment settings
+python mfa_onset_pipeline.py speech.wav \
+    --run-mfa \
+    --text-content "ta ta ta" \
+    --mfa-model english_us_arpa \
+    --mfa-dictionary english_us_arpa
+```
+
+**What it does**:
+- Accepts multiple WAV files as input
+- Automatically runs MFA alignment to generate TextGrid files (optional)
+- Detects /t/ burst onsets using MFA TextGrid annotations (high-frequency RMS envelope method)
+- Detects onsets using Hilbert-based method (Fujii method)
+- Creates comparison plots showing both methods with waveform, envelopes, and markers
+- Exports results to CSV and JSON with full parameter details
+- Generates processing log and summary report
+- Handles errors gracefully and continues processing remaining files
+
+**Output**:
+- `*_comparison.png`: Comparison plot with both detection methods
+- `*_results.csv`: Detection results in CSV format (method, onset_time, peak_time)
+- `*_results.json`: Full results with parameters in JSON format
+- `processing_summary.txt`: Summary report for all processed files
+- `pipeline_*.log`: Detailed processing log
+
+**Default Parameters**:
+- MFA: high_freq_min=2000 Hz, frame=5ms, hop=1ms, threshold_std=2.0
+- Hilbert: sr=48000 Hz, hp_cutoff=500 Hz, threshold_ratio=0.1, lookback_points=74, min_interval=50ms
+
+All parameters can be customized via command-line arguments. See `python mfa_onset_pipeline.py --help` for full documentation.
+
+### Envelope Comparison
 
 Compare different envelope configurations and detection parameters:
 
