@@ -129,7 +129,8 @@ python onset_detection_gui.py
 The GUI provides:
 - File selection dialogs for easy audio file selection
 - Automatic visualization of detection results
-- Support for all three detection methods
+- Support for both detection methods (Tap and /t/ burst)
+- Automatic MFA TextGrid generation for /t/ burst detection
 - Real-time status updates and results display
 
 See [GUI_README.md](GUI_README.md) for detailed GUI documentation.
