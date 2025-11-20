@@ -149,21 +149,36 @@ class OnsetDetectionGUI:
     def detect_tap_onsets(self):
         """Handle tap onset detection with file selection."""
         self.clear_results()
-        self.update_status("Select a WAV file for tap detection...", 'blue')
+        self.update_status("Select WAV file(s) for tap detection...", 'blue')
         
-        # Open file dialog for WAV file
-        wav_path = filedialog.askopenfilename(
-            title="Select WAV file for tap detection",
+        # Open file dialog for WAV file(s) - now supports multiple selection
+        wav_paths = filedialog.askopenfilenames(
+            title="Select WAV file(s) for tap detection",
             filetypes=[("WAV files", "*.wav"), ("All files", "*.*")]
         )
         
-        if not wav_path:
+        if not wav_paths:
             self.update_status("Selection cancelled", 'orange')
             return
         
+        # Convert to list
+        wav_paths = list(wav_paths)
+        
+        # Process files starting with the first one
+        self._process_tap_files(wav_paths, 0)
+    
+    def _process_tap_files(self, wav_paths, current_index):
+        """Process tap onset detection for a specific file in the list."""
+        if current_index >= len(wav_paths):
+            self.update_status("All files processed!", 'green')
+            return
+        
+        wav_path = wav_paths[current_index]
+        
         try:
+            self.clear_results()
             self.update_status("Processing...", 'blue')
-            self.append_result(f"Processing file: {os.path.basename(wav_path)}")
+            self.append_result(f"Processing file {current_index + 1} of {len(wav_paths)}: {os.path.basename(wav_path)}")
             self.append_result("=" * 60)
             
             # Initial detection with default parameters using Fujii method
@@ -186,7 +201,17 @@ class OnsetDetectionGUI:
             # Plot results with interactive controls using Fujii method
             self.append_result("\nGenerating interactive plot...")
             self.append_result("Use the slider to adjust HPF frequency and click 'Re-detect' to update.")
+            self.append_result("Cmd+Shift+Click to delete onset/peak markers.")
             self.append_result("Re-detection uses Fujii method (10% threshold, backward search, linear interpolation).")
+            
+            # Callback for next file navigation
+            def on_next_file():
+                if current_index + 1 < len(wav_paths):
+                    # Process next file in the list
+                    self._process_tap_files(wav_paths, current_index + 1)
+                else:
+                    # Show file dialog for new file selection
+                    self.detect_tap_onsets()
             
             onset_hilbert.plot_waveform_and_envelope_interactive(
                 wav_path,
@@ -194,7 +219,10 @@ class OnsetDetectionGUI:
                 is_click=False,
                 threshold_ratio=threshold_ratio,
                 min_distance_ms=min_distance_ms,
-                title=f"Tap Onset Detection (Fujii Method) - {os.path.basename(wav_path)}"
+                title=f"Tap Onset Detection (Fujii Method) - {os.path.basename(wav_path)} ({current_index + 1}/{len(wav_paths)})",
+                on_next_callback=on_next_file,
+                enable_marker_deletion=True,
+                enable_export=True
             )
             
             self.update_status("Detection complete!", 'green')
