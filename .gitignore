@@ -40,3 +40,13 @@ Thumbs.db
 # Test files
 test_*.wav
 test_*.TextGrid
+test_audio.wav
+example_speech_*.wav
+
+# MFA pipeline outputs
+mfa_onset_results/
+*_comparison.png
+*_results.csv
+*_results.json
+processing_summary.txt
+pipeline_*.log
