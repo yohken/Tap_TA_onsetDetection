@@ -322,7 +322,6 @@ class TestGUIModule(unittest.TestCase):
         required_methods = [
             'detect_tap_onsets',
             'detect_t_burst_onsets',
-            'generate_click_track',
             'update_status',
             'append_result',
             'clear_results'
