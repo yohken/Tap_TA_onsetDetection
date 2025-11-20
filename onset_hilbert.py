@@ -747,9 +747,18 @@ def plot_waveform_and_envelope_interactive(
         if event.inaxes not in (ax1, ax2):
             return
         
-        # Check for modifier keys (command/super for Mac, control for others)
-        has_command = event.key in ('cmd', 'super', 'ctrl', 'control')
-        has_shift = 'shift' in str(event.key) if event.key else False
+        # Matplotlib provides the key as a string, with modifiers as prefixes
+        # e.g., 'shift+cmd+button', or via event.key
+        # Check for both shift and cmd/ctrl modifiers
+        key_str = str(event.key) if event.key else ""
+        has_shift = 'shift' in key_str.lower()
+        has_command = any(mod in key_str.lower() for mod in ['cmd', 'super', 'ctrl', 'control'])
+        
+        # Also check the button event modifiers if available
+        if hasattr(event, 'modifiers'):
+            mods = event.modifiers
+            has_shift = has_shift or 'shift' in str(mods).lower()
+            has_command = has_command or any(mod in str(mods).lower() for mod in ['cmd', 'super', 'ctrl', 'control'])
         
         if not (has_command and has_shift):
             return
