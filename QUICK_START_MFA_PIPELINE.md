@@ -29,11 +29,11 @@ This creates 3 example WAV files: `example_speech_1.wav`, `example_speech_2.wav`
 ### Step 2: Process Audio Files
 
 ```bash
-# Basic usage (Hilbert detection only)
+# Basic usage (MFA alignment runs automatically if MFA is installed)
 python mfa_onset_pipeline.py example_speech_*.wav
 
-# With automatic MFA alignment (requires MFA installed)
-python mfa_onset_pipeline.py example_speech_*.wav --run-mfa
+# Without MFA alignment (if TextGrid files already exist)
+python mfa_onset_pipeline.py example_speech_*.wav --no-mfa
 
 # Custom output directory
 python mfa_onset_pipeline.py example_speech_*.wav -o my_results/

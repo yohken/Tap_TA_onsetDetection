@@ -55,25 +55,24 @@ mfa model download dictionary english_us_arpa
 ### Basic Usage
 
 ```bash
-# Process a single file (Hilbert detection only)
+# Process a single file (MFA alignment runs automatically if MFA is installed)
 python mfa_onset_pipeline.py speech.wav
 
-# Process multiple files
+# Process multiple files (MFA alignment runs automatically)
 python mfa_onset_pipeline.py file1.wav file2.wav file3.wav
+
+# Process without MFA alignment (if TextGrid files already exist)
+python mfa_onset_pipeline.py speech.wav --no-mfa
 ```
 
-### With MFA Alignment
+### Customizing MFA Alignment
 
 ```bash
-# Automatically run MFA alignment before detection
-python mfa_onset_pipeline.py speech.wav --run-mfa
-
-# Specify text content for alignment
-python mfa_onset_pipeline.py speech.wav --run-mfa --text-content "ta ta ta"
+# Specify custom text content for alignment (advanced use)
+python mfa_onset_pipeline.py speech.wav --text-content "ta ta ta"
 
 # Use different MFA models
 python mfa_onset_pipeline.py speech.wav \
-    --run-mfa \
     --mfa-model japanese_mfa \
     --mfa-dictionary japanese_mfa
 ```
