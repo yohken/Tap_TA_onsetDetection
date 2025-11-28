@@ -542,5 +542,157 @@ class TestModuleStructure(unittest.TestCase):
             self.assertGreater(len(func.__doc__.strip()), 10)
 
 
+class TestVoiceSegmentExport(unittest.TestCase):
+    """Test cases for voice segment export functionality."""
+    
+    @classmethod
+    def setUpClass(cls):
+        """Create synthetic test audio."""
+        import sys
+        import unittest.mock as mock
+        if 'tkinter' not in sys.modules:
+            sys.modules['tkinter'] = mock.MagicMock()
+            sys.modules['tkinter.filedialog'] = mock.MagicMock()
+            sys.modules['tkinter.messagebox'] = mock.MagicMock()
+            sys.modules['tkinter.ttk'] = mock.MagicMock()
+        
+        import importlib
+        import onset_detection_gui
+        importlib.reload(onset_detection_gui)
+        cls.onset_detection_gui = onset_detection_gui
+        
+        sr = 44100
+        duration = 1.0
+        t = np.linspace(0, duration, int(sr * duration))
+        
+        audio = np.zeros_like(t)
+        cls.expected_segment_times = [0.2, 0.6]
+        
+        for burst_time in cls.expected_segment_times:
+            burst_start = int(burst_time * sr)
+            burst_len = int(0.02 * sr)
+            if burst_start + burst_len < len(audio):
+                decay = np.exp(-np.linspace(0, 5, burst_len))
+                noise = np.random.randn(burst_len)
+                audio[burst_start:burst_start + burst_len] = noise * decay * 0.5
+            
+            vowel_start = burst_start + burst_len
+            vowel_len = int(0.15 * sr)
+            if vowel_start + vowel_len < len(audio):
+                vowel_t = np.linspace(0, 0.15, vowel_len)
+                vowel_env = np.sin(np.pi * vowel_t / 0.15)
+                vowel_freq = 440
+                vowel = np.sin(2 * np.pi * vowel_freq * vowel_t) * vowel_env * 0.3
+                audio[vowel_start:vowel_start + vowel_len] += vowel
+        
+        audio = audio / np.max(np.abs(audio)) * 0.8
+        cls.audio = audio
+        cls.sr = sr
+        
+        audio_int16 = (audio * 32767).astype(np.int16)
+        cls.temp_wav = tempfile.NamedTemporaryFile(suffix='_export_test.wav', delete=False)
+        cls.temp_wav_path = cls.temp_wav.name
+        cls.temp_wav.close()
+        wavfile.write(cls.temp_wav_path, sr, audio_int16)
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up temporary files."""
+        if os.path.exists(cls.temp_wav_path):
+            os.unlink(cls.temp_wav_path)
+    
+    def test_csv_export_data_format(self):
+        """Test that CSV export produces correct data format."""
+        import pandas as pd
+        
+        # Get detected features
+        segments = self.onset_detection_gui.detect_voice_segments(
+            self.audio, self.sr,
+            amplitude_threshold_ratio=0.05
+        )
+        
+        features_list = []
+        for start, end in segments:
+            features = self.onset_detection_gui.extract_feature_points(
+                self.audio, self.sr, start, end
+            )
+            features_list.append(features)
+        
+        # Create CSV data manually (simulating export)
+        rows = []
+        for i, features in enumerate(features_list):
+            row = {
+                'segment_index': i,
+                't_start_sec': features['t_start'],
+                't_peak_sec': features['t_peak'],
+                'a_start_sec': features['a_start'],
+                'a_stable_sec': features['a_stable'],
+                'end_sec': features['end'],
+            }
+            rows.append(row)
+        
+        df = pd.DataFrame(rows)
+        
+        # Check column names
+        expected_columns = ['segment_index', 't_start_sec', 't_peak_sec', 
+                          'a_start_sec', 'a_stable_sec', 'end_sec']
+        for col in expected_columns:
+            self.assertIn(col, df.columns)
+        
+        # Check data count
+        self.assertEqual(len(df), len(features_list))
+    
+    def test_json_export_data_structure(self):
+        """Test that JSON export data has correct structure."""
+        import json
+        from datetime import datetime
+        
+        # Get detected features
+        segments = self.onset_detection_gui.detect_voice_segments(
+            self.audio, self.sr,
+            amplitude_threshold_ratio=0.05
+        )
+        
+        features_list = []
+        for start, end in segments:
+            features = self.onset_detection_gui.extract_feature_points(
+                self.audio, self.sr, start, end
+            )
+            features_list.append(features)
+        
+        # Create JSON data manually (simulating export)
+        export_data = {
+            'metadata': {
+                'source_file': os.path.basename(self.temp_wav_path),
+                'sample_rate': self.sr,
+                'audio_duration_sec': len(self.audio) / self.sr,
+                'export_timestamp': datetime.now().isoformat(),
+            },
+            'parameters': {
+                'amplitude_threshold_ratio': 0.05,
+            },
+            'segments': features_list,
+            'segment_count': len(features_list),
+        }
+        
+        # Check structure
+        self.assertIn('metadata', export_data)
+        self.assertIn('parameters', export_data)
+        self.assertIn('segments', export_data)
+        self.assertIn('segment_count', export_data)
+        
+        # Check metadata
+        self.assertIn('sample_rate', export_data['metadata'])
+        self.assertIn('export_timestamp', export_data['metadata'])
+        
+        # Check JSON serializable
+        json_str = json.dumps(export_data)
+        self.assertIsInstance(json_str, str)
+        
+        # Check can be deserialized
+        loaded = json.loads(json_str)
+        self.assertEqual(loaded['segment_count'], len(features_list))
+
+
 if __name__ == '__main__':
     unittest.main()

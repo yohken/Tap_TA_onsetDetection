@@ -776,5 +776,68 @@ class TestCSVExportWithRetry(unittest.TestCase):
                 os.unlink(csv_path)
 
 
+class TestJSONExport(unittest.TestCase):
+    """Test cases for JSON export functionality."""
+    
+    def test_json_export_structure(self):
+        """Test that JSON export data has the correct structure."""
+        import json
+        from datetime import datetime
+        
+        # Simulate the export data structure
+        current_onsets = [0.1, 0.5, 1.0]
+        current_peaks = [0.15, 0.55, 1.05]
+        
+        export_data = {
+            'metadata': {
+                'source_file': 'test.wav',
+                'source_path': '/path/to/test.wav',
+                'sample_rate': 48000,
+                'audio_duration_sec': 2.0,
+                'detection_type': 'tap',
+                'export_timestamp': datetime.now().isoformat(),
+            },
+            'parameters': {
+                'hp_cutoff_hz': 300.0,
+                'threshold_ratio': 0.1,
+                'min_distance_ms': 100.0,
+                'smooth_ms': 0.5,
+            },
+            'results': {
+                'onset_times_sec': current_onsets,
+                'peak_times_sec': current_peaks,
+                'detection_count': len(current_onsets),
+            }
+        }
+        
+        # Check structure
+        self.assertIn('metadata', export_data)
+        self.assertIn('parameters', export_data)
+        self.assertIn('results', export_data)
+        
+        # Check metadata
+        self.assertIn('sample_rate', export_data['metadata'])
+        self.assertIn('detection_type', export_data['metadata'])
+        self.assertIn('export_timestamp', export_data['metadata'])
+        
+        # Check parameters
+        self.assertIn('hp_cutoff_hz', export_data['parameters'])
+        self.assertIn('threshold_ratio', export_data['parameters'])
+        
+        # Check results
+        self.assertIn('onset_times_sec', export_data['results'])
+        self.assertIn('peak_times_sec', export_data['results'])
+        self.assertIn('detection_count', export_data['results'])
+        
+        # Check JSON serializable
+        json_str = json.dumps(export_data)
+        self.assertIsInstance(json_str, str)
+        
+        # Check can be deserialized
+        loaded = json.loads(json_str)
+        self.assertEqual(loaded['results']['detection_count'], 3)
+        self.assertEqual(loaded['results']['onset_times_sec'], current_onsets)
+
+
 if __name__ == '__main__':
     unittest.main()

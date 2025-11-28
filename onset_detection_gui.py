@@ -33,8 +33,11 @@ from matplotlib.widgets import Slider, Button
 import onset_detection
 import onset_hilbert
 import os
+import json
 import numpy as np
 import scipy.signal
+import pandas as pd
+from datetime import datetime
 
 # Configure matplotlib backend for GUI
 # TkAgg will be used automatically when available
@@ -498,11 +501,11 @@ def plot_voice_segments_interactive(
         fontsize=10
     )
     
-    # Add sliders
-    plt.subplots_adjust(bottom=0.18)
+    # Add sliders and buttons
+    plt.subplots_adjust(bottom=0.22)
     
     # Threshold slider
-    ax_slider = plt.axes([0.15, 0.10, 0.50, 0.03])
+    ax_slider = plt.axes([0.15, 0.14, 0.50, 0.03])
     slider_threshold = Slider(
         ax_slider,
         'Threshold (%)',
@@ -512,9 +515,27 @@ def plot_voice_segments_interactive(
         valstep=0.5
     )
     
+    # Button positions (two rows)
+    button_width = 0.12
+    button_height = 0.04
+    button_y_row1 = 0.08  # First row
+    button_y_row2 = 0.02  # Second row
+    
     # Re-detect button
-    ax_button = plt.axes([0.70, 0.10, 0.12, 0.04])
-    button_redetect = Button(ax_button, 'Re-detect')
+    ax_button_redetect = plt.axes([0.15, button_y_row1, button_width, button_height])
+    button_redetect = Button(ax_button_redetect, 'Re-detect')
+    
+    # CSV export button
+    ax_button_csv = plt.axes([0.29, button_y_row1, button_width, button_height])
+    button_csv = Button(ax_button_csv, 'CSV書き出し')
+    
+    # Image export button
+    ax_button_image = plt.axes([0.43, button_y_row1, button_width, button_height])
+    button_image = Button(ax_button_image, '画像書き出し')
+    
+    # JSON data export button (for reproducibility)
+    ax_button_json = plt.axes([0.57, button_y_row1, button_width + 0.04, button_height])
+    button_json = Button(ax_button_json, 'データ書き出し（再現用）')
     
     # Current state
     state = {
@@ -550,6 +571,128 @@ def plot_voice_segments_interactive(
         fig.canvas.draw_idle()
     
     button_redetect.on_clicked(on_redetect)
+    
+    def on_export_csv(event):
+        """Handle CSV export button click."""
+        # Create a hidden tkinter root window for file dialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        # Get default filename
+        default_name = os.path.splitext(os.path.basename(wav_path))[0] + '_voice_segments.csv'
+        
+        # Show save file dialog
+        file_path = filedialog.asksaveasfilename(
+            title="CSV書き出し先を選択",
+            defaultextension=".csv",
+            initialfile=default_name,
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            try:
+                # Build DataFrame from features
+                rows = []
+                for i, features in enumerate(state['features_list']):
+                    row = {
+                        'segment_index': i,
+                        't_start_sec': features['t_start'],
+                        't_peak_sec': features['t_peak'],
+                        'a_start_sec': features['a_start'],
+                        'a_stable_sec': features['a_stable'],
+                        'end_sec': features['end'],
+                    }
+                    rows.append(row)
+                
+                df = pd.DataFrame(rows)
+                df.to_csv(file_path, index=False)
+                print(f"CSV exported to: {file_path}")
+            except Exception as e:
+                messagebox.showerror("エラー", f"CSV書き出しに失敗しました: {str(e)}")
+    
+    button_csv.on_clicked(on_export_csv)
+    
+    def on_export_image(event):
+        """Handle image export button click."""
+        # Create a hidden tkinter root window for file dialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        # Get default filename
+        default_name = os.path.splitext(os.path.basename(wav_path))[0] + '_plot.png'
+        
+        # Show save file dialog
+        file_path = filedialog.asksaveasfilename(
+            title="画像書き出し先を選択",
+            defaultextension=".png",
+            initialfile=default_name,
+            filetypes=[("PNG files", "*.png"), ("PDF files", "*.pdf"), ("SVG files", "*.svg"), ("All files", "*.*")]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            try:
+                fig.savefig(file_path, dpi=150, bbox_inches='tight')
+                print(f"Image exported to: {file_path}")
+            except Exception as e:
+                messagebox.showerror("エラー", f"画像書き出しに失敗しました: {str(e)}")
+    
+    button_image.on_clicked(on_export_image)
+    
+    def on_export_json(event):
+        """Handle JSON data export button click (for reproducibility)."""
+        # Create a hidden tkinter root window for file dialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        # Get default filename
+        default_name = os.path.splitext(os.path.basename(wav_path))[0] + '_data.json'
+        
+        # Show save file dialog
+        file_path = filedialog.asksaveasfilename(
+            title="データ書き出し先を選択（再現用）",
+            defaultextension=".json",
+            initialfile=default_name,
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            try:
+                # Build data dictionary for reproducibility
+                export_data = {
+                    'metadata': {
+                        'source_file': os.path.basename(wav_path),
+                        'source_path': wav_path,
+                        'sample_rate': sr,
+                        'audio_duration_sec': len(y) / sr,
+                        'export_timestamp': datetime.now().isoformat(),
+                    },
+                    'parameters': {
+                        'amplitude_threshold_ratio': state['threshold_ratio'],
+                        'min_segment_duration_sec': MIN_SEGMENT_DURATION_SEC,
+                        'min_silence_duration_sec': MIN_SILENCE_DURATION_SEC,
+                        'rms_frame_length_ms': RMS_FRAME_LENGTH_MS,
+                        'rms_hop_length_ms': RMS_HOP_LENGTH_MS,
+                    },
+                    'segments': state['features_list'],
+                    'segment_count': len(state['features_list']),
+                }
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(export_data, f, ensure_ascii=False, indent=2)
+                print(f"JSON data exported to: {file_path}")
+            except Exception as e:
+                messagebox.showerror("エラー", f"データ書き出しに失敗しました: {str(e)}")
+    
+    button_json.on_clicked(on_export_json)
     
     # Add zoom functionality
     def on_scroll(event):

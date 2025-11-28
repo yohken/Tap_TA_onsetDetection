@@ -18,6 +18,9 @@ from scipy.signal import butter, sosfiltfilt, hilbert, find_peaks
 import soundfile as sf
 import matplotlib.pyplot as plt
 import pandas as pd
+import json
+import os
+from datetime import datetime
 
 
 def highpass_filter(
@@ -659,18 +662,34 @@ def plot_waveform_and_envelope_interactive(
     button_height = 0.04
     button_y = 0.03
     
-    # Re-detect button
-    ax_redetect = plt.axes([0.15, button_y, button_width, button_height])
-    button_redetect = Button(ax_redetect, 'Re-detect')
+    # Calculate button positions based on what's enabled
+    button_x = 0.15
+    button_spacing = 0.11
     
-    # Export button (if enabled)
+    # Re-detect button
+    ax_redetect = plt.axes([button_x, button_y, button_width, button_height])
+    button_redetect = Button(ax_redetect, 'Re-detect')
+    button_x += button_spacing
+    
+    # Export CSV button (if enabled)
     if enable_export:
-        ax_export = plt.axes([0.27, button_y, button_width, button_height])
-        button_export = Button(ax_export, 'Export')
+        ax_export = plt.axes([button_x, button_y, button_width, button_height])
+        button_export = Button(ax_export, 'CSV書き出し')
+        button_x += button_spacing
+    
+    # Image export button (always show)
+    ax_image = plt.axes([button_x, button_y, button_width, button_height])
+    button_image = Button(ax_image, '画像書き出し')
+    button_x += button_spacing
+    
+    # JSON data export button (always show, for reproducibility)
+    ax_json = plt.axes([button_x, button_y, button_width + 0.04, button_height])
+    button_json = Button(ax_json, 'データ書き出し')
+    button_x += button_spacing + 0.04
     
     # Next button (if callback provided)
     if on_next_callback is not None:
-        ax_next = plt.axes([0.39, button_y, button_width, button_height])
+        ax_next = plt.axes([button_x, button_y, button_width, button_height])
         button_next = Button(ax_next, 'Next')
     
     # Store current onset/peak times for manual editing
@@ -811,19 +830,18 @@ def plot_waveform_and_envelope_interactive(
     button_redetect.on_clicked(on_redetect_click)
     
     def on_export_click(event):
-        """Handle export button click."""
+        """Handle CSV export button click."""
         # Create a hidden tkinter root window for file dialog
         root = tk.Tk()
         root.withdraw()
         root.attributes('-topmost', True)
         
         # Get default filename
-        import os
         default_name = os.path.splitext(os.path.basename(wav_path))[0] + '_onsets.csv'
         
         # Show save file dialog
         file_path = filedialog.asksaveasfilename(
-            title="Export Onset/Peak Data",
+            title="CSV書き出し先を選択",
             defaultextension=".csv",
             initialfile=default_name,
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
@@ -840,12 +858,98 @@ def plot_waveform_and_envelope_interactive(
                 label="tap" if not is_click else "click"
             )
             if success:
-                print(f"Data exported to: {actual_path}")
+                print(f"CSV exported to: {actual_path}")
             else:
                 print("Export cancelled.")
     
     if enable_export:
         button_export.on_clicked(on_export_click)
+    
+    def on_image_export_click(event):
+        """Handle image export button click."""
+        # Create a hidden tkinter root window for file dialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        # Get default filename
+        default_name = os.path.splitext(os.path.basename(wav_path))[0] + '_plot.png'
+        
+        # Show save file dialog
+        file_path = filedialog.asksaveasfilename(
+            title="画像書き出し先を選択",
+            defaultextension=".png",
+            initialfile=default_name,
+            filetypes=[("PNG files", "*.png"), ("PDF files", "*.pdf"), ("SVG files", "*.svg"), ("All files", "*.*")]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            try:
+                fig.savefig(file_path, dpi=150, bbox_inches='tight')
+                print(f"Image exported to: {file_path}")
+            except Exception as e:
+                print(f"Error exporting image: {e}")
+    
+    button_image.on_clicked(on_image_export_click)
+    
+    def on_json_export_click(event):
+        """Handle JSON data export button click (for reproducibility)."""
+        # Create a hidden tkinter root window for file dialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        # Get default filename
+        default_name = os.path.splitext(os.path.basename(wav_path))[0] + '_data.json'
+        
+        # Show save file dialog
+        file_path = filedialog.asksaveasfilename(
+            title="データ書き出し先を選択（再現用）",
+            defaultextension=".json",
+            initialfile=default_name,
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            try:
+                # Get current parameters
+                current_hp_cutoff = slider_hpf.val
+                current_threshold = slider_threshold.val / 100.0
+                
+                # Build data dictionary for reproducibility
+                export_data = {
+                    'metadata': {
+                        'source_file': os.path.basename(wav_path),
+                        'source_path': wav_path,
+                        'sample_rate': sr,
+                        'audio_duration_sec': len(data) / sr,
+                        'detection_type': 'click' if is_click else 'tap',
+                        'export_timestamp': datetime.now().isoformat(),
+                    },
+                    'parameters': {
+                        'hp_cutoff_hz': current_hp_cutoff,
+                        'threshold_ratio': current_threshold,
+                        'min_distance_ms': min_distance_ms,
+                        'smooth_ms': smooth_ms,
+                    },
+                    'results': {
+                        'onset_times_sec': list(current_onsets),
+                        'peak_times_sec': list(current_peaks),
+                        'detection_count': len(current_onsets),
+                    }
+                }
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(export_data, f, ensure_ascii=False, indent=2)
+                print(f"JSON data exported to: {file_path}")
+            except Exception as e:
+                print(f"Error exporting JSON data: {e}")
+    
+    button_json.on_clicked(on_json_export_click)
     
     def on_next_click(event):
         """Handle next button click."""
