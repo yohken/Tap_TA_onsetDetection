@@ -309,6 +309,10 @@ def save_onsets_and_peaks_csv(
         onset_times: 1D array of onset times [s].
         peak_times:  1D array of peak times [s].
         label: optional label (e.g., "click" or "tap").
+    
+    Raises:
+        ValueError: If onset_times and peak_times have different lengths.
+        OSError: If the file cannot be written (permission denied, disk full, etc.).
     """
     # Ensure arrays have same length
     if len(onset_times) != len(peak_times):
@@ -331,6 +335,103 @@ def save_onsets_and_peaks_csv(
     
     # Save to CSV
     df.to_csv(out_path, index=False)
+
+
+def save_onsets_and_peaks_csv_with_retry(
+    out_path: str,
+    onset_times: np.ndarray,
+    peak_times: np.ndarray,
+    *,
+    label: str | None = None,
+    parent_window: "tk.Tk | None" = None,
+) -> tuple[bool, str | None]:
+    """
+    Save detected onset and peak times to a CSV file with error handling and retry.
+    
+    If a file I/O error occurs (permission denied, disk full, etc.), the user is
+    informed of the error and prompted to select a new save location.
+    
+    Args:
+        out_path: initial path to CSV file.
+        onset_times: 1D array of onset times [s].
+        peak_times:  1D array of peak times [s].
+        label: optional label (e.g., "click" or "tap").
+        parent_window: optional parent tkinter window for dialogs.
+    
+    Returns:
+        Tuple of (success, actual_path):
+            - success: True if file was saved successfully, False if cancelled.
+            - actual_path: The path where file was saved, or None if cancelled.
+    
+    Raises:
+        ValueError: If onset_times and peak_times have different lengths.
+    """
+    import os
+    
+    current_path = out_path
+    
+    while True:
+        try:
+            save_onsets_and_peaks_csv(
+                current_path, onset_times, peak_times, label=label
+            )
+            return (True, current_path)
+        except (OSError, PermissionError, IOError) as e:
+            # Only import tkinter when needed (for error dialogs)
+            try:
+                import tkinter as tk
+                from tkinter import filedialog, messagebox
+            except ImportError:
+                # If tkinter is not available, re-raise the original error
+                raise e
+            
+            # Create a root window if none provided
+            if parent_window is None:
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes('-topmost', True)
+            else:
+                root = parent_window
+            
+            # Inform user of the error
+            error_message = (
+                f"ファイルの書き込みに失敗しました。\n\n"
+                f"エラー: {str(e)}\n"
+                f"パス: {current_path}\n\n"
+                f"別の保存場所を選択しますか？"
+            )
+            
+            retry = messagebox.askyesno(
+                "ファイル書き込みエラー",
+                error_message,
+                icon='warning'
+            )
+            
+            if not retry:
+                # User chose not to retry
+                if parent_window is None:
+                    root.destroy()
+                return (False, None)
+            
+            # Get default filename from current path
+            default_name = os.path.basename(current_path)
+            
+            # Show save file dialog for new location
+            new_path = filedialog.asksaveasfilename(
+                title="新しい保存場所を選択",
+                defaultextension=".csv",
+                initialfile=default_name,
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            )
+            
+            if parent_window is None:
+                root.destroy()
+            
+            if not new_path:
+                # User cancelled the dialog
+                return (False, None)
+            
+            current_path = new_path
 
 
 def plot_waveform_and_envelope(
@@ -730,14 +831,17 @@ def plot_waveform_and_envelope_interactive(
         root.destroy()
         
         if file_path:
-            # Save data
-            save_onsets_and_peaks_csv(
+            # Save data with error handling and retry
+            success, actual_path = save_onsets_and_peaks_csv_with_retry(
                 file_path,
                 np.array(current_onsets),
                 np.array(current_peaks),
                 label="tap" if not is_click else "click"
             )
-            print(f"Data exported to: {file_path}")
+            if success:
+                print(f"Data exported to: {actual_path}")
+            else:
+                print("Export cancelled.")
     
     if enable_export:
         button_export.on_clicked(on_export_click)
@@ -1073,6 +1177,7 @@ def run_click_detection_with_dialog(
     Behavior:
         - If the user cancels the WAV selection, return without error.
         - If the user cancels the CSV save dialog, return without error.
+        - If a file I/O error occurs, the user is informed and can choose a new location.
     """
     try:
         import tkinter as tk
@@ -1093,6 +1198,7 @@ def run_click_detection_with_dialog(
     
     if not wav_path:
         print("No WAV file selected. Exiting.")
+        root.destroy()
         return
     
     # Run detection
@@ -1115,11 +1221,19 @@ def run_click_detection_with_dialog(
     
     if not csv_path:
         print("No CSV file selected. Exiting without saving.")
+        root.destroy()
         return
     
-    # Save to CSV
-    save_onsets_and_peaks_csv(csv_path, onset_times, peak_times, label="click")
-    print(f"Saved onset/peak times to: {csv_path}")
+    root.destroy()
+    
+    # Save to CSV with error handling and retry
+    success, actual_path = save_onsets_and_peaks_csv_with_retry(
+        csv_path, onset_times, peak_times, label="click"
+    )
+    if success:
+        print(f"Saved onset/peak times to: {actual_path}")
+    else:
+        print("Save cancelled.")
 
 
 def run_tap_detection_with_dialog(
@@ -1138,6 +1252,7 @@ def run_tap_detection_with_dialog(
         4) Save onset/peak times to CSV with save_onsets_and_peaks_csv(label="tap").
 
     Behavior is analogous to run_click_detection_with_dialog.
+    If a file I/O error occurs, the user is informed and can choose a new location.
     """
     try:
         import tkinter as tk
@@ -1158,6 +1273,7 @@ def run_tap_detection_with_dialog(
     
     if not wav_path:
         print("No WAV file selected. Exiting.")
+        root.destroy()
         return
     
     # Run detection
@@ -1180,11 +1296,19 @@ def run_tap_detection_with_dialog(
     
     if not csv_path:
         print("No CSV file selected. Exiting without saving.")
+        root.destroy()
         return
     
-    # Save to CSV
-    save_onsets_and_peaks_csv(csv_path, onset_times, peak_times, label="tap")
-    print(f"Saved onset/peak times to: {csv_path}")
+    root.destroy()
+    
+    # Save to CSV with error handling and retry
+    success, actual_path = save_onsets_and_peaks_csv_with_retry(
+        csv_path, onset_times, peak_times, label="tap"
+    )
+    if success:
+        print(f"Saved onset/peak times to: {actual_path}")
+    else:
+        print("Save cancelled.")
 
 
 if __name__ == "__main__":

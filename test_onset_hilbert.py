@@ -410,6 +410,7 @@ class TestModuleStructure(unittest.TestCase):
             'detect_click_onsets_and_peaks',
             'detect_tap_onsets_and_peaks',
             'save_onsets_and_peaks_csv',
+            'save_onsets_and_peaks_csv_with_retry',
             'plot_waveform_and_envelope',
             'plot_waveform_and_envelope_interactive',
             'interactive_hpf_tuning',
@@ -689,6 +690,92 @@ class TestRedetectionConsistency(unittest.TestCase):
         for i in range(1, len(results)):
             np.testing.assert_array_equal(results[0][0], results[i][0])
             np.testing.assert_array_equal(results[0][1], results[i][1])
+
+
+class TestCSVExportWithRetry(unittest.TestCase):
+    """Test cases for CSV export with error handling and retry functionality."""
+    
+    def test_save_with_retry_function_exists(self):
+        """Test that save_onsets_and_peaks_csv_with_retry function exists."""
+        self.assertTrue(
+            hasattr(onset_hilbert, 'save_onsets_and_peaks_csv_with_retry'),
+            "Module missing function: save_onsets_and_peaks_csv_with_retry"
+        )
+    
+    def test_save_with_retry_has_docstring(self):
+        """Test that save_onsets_and_peaks_csv_with_retry has documentation."""
+        func = onset_hilbert.save_onsets_and_peaks_csv_with_retry
+        self.assertIsNotNone(func.__doc__)
+        self.assertGreater(len(func.__doc__.strip()), 10)
+    
+    def test_save_with_retry_success(self):
+        """Test that save_onsets_and_peaks_csv_with_retry works for valid path."""
+        onset_times = np.array([0.1, 0.5, 1.0])
+        peak_times = np.array([0.15, 0.55, 1.05])
+        
+        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False, mode='w') as f:
+            csv_path = f.name
+        
+        try:
+            success, actual_path = onset_hilbert.save_onsets_and_peaks_csv_with_retry(
+                csv_path, onset_times, peak_times, label="test"
+            )
+            
+            # Should succeed
+            self.assertTrue(success)
+            self.assertEqual(actual_path, csv_path)
+            
+            # Check file was created and contains correct data
+            self.assertTrue(os.path.exists(csv_path))
+            
+            import pandas as pd
+            df = pd.read_csv(csv_path)
+            self.assertEqual(len(df), 3)
+            np.testing.assert_array_almost_equal(df['onset_sec'].values, onset_times)
+            np.testing.assert_array_almost_equal(df['peak_sec'].values, peak_times)
+        finally:
+            if os.path.exists(csv_path):
+                os.unlink(csv_path)
+    
+    def test_save_with_retry_mismatched_lengths_raises_error(self):
+        """Test that mismatched onset and peak arrays still raise an error."""
+        onset_times = np.array([0.1, 0.5])
+        peak_times = np.array([0.15, 0.55, 1.05])
+        
+        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False, mode='w') as f:
+            csv_path = f.name
+        
+        try:
+            with self.assertRaises(ValueError):
+                onset_hilbert.save_onsets_and_peaks_csv_with_retry(
+                    csv_path, onset_times, peak_times
+                )
+        finally:
+            if os.path.exists(csv_path):
+                os.unlink(csv_path)
+    
+    def test_save_with_retry_returns_tuple(self):
+        """Test that save_onsets_and_peaks_csv_with_retry returns a tuple."""
+        onset_times = np.array([0.1])
+        peak_times = np.array([0.15])
+        
+        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False, mode='w') as f:
+            csv_path = f.name
+        
+        try:
+            result = onset_hilbert.save_onsets_and_peaks_csv_with_retry(
+                csv_path, onset_times, peak_times
+            )
+            
+            # Should return tuple of (success, path)
+            self.assertIsInstance(result, tuple)
+            self.assertEqual(len(result), 2)
+            
+            success, actual_path = result
+            self.assertIsInstance(success, bool)
+        finally:
+            if os.path.exists(csv_path):
+                os.unlink(csv_path)
 
 
 if __name__ == '__main__':
