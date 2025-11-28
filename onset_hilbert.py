@@ -17,10 +17,8 @@ import numpy as np
 from scipy.signal import butter, sosfiltfilt, hilbert, find_peaks
 import soundfile as sf
 import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 import pandas as pd
 import librosa
-import librosa.display
 
 
 def highpass_filter(
@@ -717,7 +715,6 @@ def plot_waveform_and_envelope_interactive(
     button_y = 0.03
     
     # Calculate button positions - need to accommodate Spectrogram button
-    button_positions = [0.15]  # Re-detect at 0.15
     current_pos = 0.27
     
     # Re-detect button
