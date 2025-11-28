@@ -574,7 +574,7 @@ class MFAOnsetPipeline:
                                 # Color based on phoneme type
                                 if interval.mark in onset_detection.VOWEL_PHONEMES:
                                     color = 'lightblue'
-                                elif interval.mark.lower() == 't':
+                                elif interval.mark in ['t', 'T']:
                                     color = 'lightcoral'
                                 else:
                                     color = 'lightgray'
