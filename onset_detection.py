@@ -2,10 +2,16 @@
 Onset detection module for three types of audio signals:
 1. Metronome click tracks (theoretical grid positions)
 2. Finger tap recordings
-3. Sung Japanese syllable "ta" (/t/ burst detection)
+3. Sung Japanese syllable "ta" (/t/ burst detection with voicing-based A onset)
 
 This module provides clean, well-documented Python code for onset detection
 using standard DSP techniques (no machine learning).
+
+NEW: High-precision TA Detection
+- Uses voicing detection (librosa.pyin F0 tracking) to find A vowel onset
+- Enforces physiological/acoustic transition time constraints (max 0.2 seconds)
+- Combines RMS envelope T burst detection with voicing-based A onset detection
+- Key functions: detect_voicing_onset(), find_ta_transition(), detect_ta_onsets_with_voicing()
 
 IMPORTANT NOTE FOR RE-DETECTION:
 - The interactive plotting function plot_envelope_with_onsets_interactive in this module
@@ -17,6 +23,7 @@ IMPORTANT NOTE FOR RE-DETECTION:
 
 This module remains useful for:
 - /t/ burst detection with TextGrid guidance (detect_t_burst_onsets_from_mfa)
+- High-precision TA detection with voicing (detect_ta_onsets_with_voicing)
 - Metronome onset generation (get_click_onsets_from_bpm)
 - Alternative detection methods for comparison purposes
 
@@ -555,6 +562,470 @@ def detect_t_burst_onsets_from_mfa(
                 burst_onsets.append(min_time)
     
     return np.array(burst_onsets)
+
+
+def detect_voicing_onset(
+    y: np.ndarray,
+    sr: int,
+    start_sample: int,
+    *,
+    fmin: float = 50.0,
+    fmax: float = 500.0,
+    frame_length_ms: float = 25.0,
+    hop_length_ms: float = 5.0,
+) -> tuple[Optional[int], np.ndarray, np.ndarray]:
+    """
+    Detect the first voiced frame after a given start position using F0 (pitch) estimation.
+    
+    Uses librosa.pyin for pitch tracking and voicing detection. The onset of voicing
+    is defined as the first frame where a valid F0 is detected (voiced frame).
+    
+    Args:
+        y: mono audio signal (full audio, not just a segment).
+        sr: sampling rate in Hz.
+        start_sample: sample index to start searching from (e.g., T peak position).
+        fmin: minimum F0 frequency to detect (Hz). Default 50 Hz for bass voice.
+              Note: Must be >= sr / frame_length for librosa.pyin to work.
+        fmax: maximum F0 frequency to detect (Hz). Default 500 Hz for high female/child.
+        frame_length_ms: analysis frame length in milliseconds.
+        hop_length_ms: hop size in milliseconds.
+    
+    Returns:
+        voicing_onset_sample: sample index of voicing onset, or None if not found.
+        f0: array of F0 values (Hz) for each frame, NaN for unvoiced frames.
+        voiced_flag: boolean array indicating voiced (True) or unvoiced (False) frames.
+    """
+    # Extract segment from start_sample to end
+    segment = y[start_sample:]
+    
+    if len(segment) < int(frame_length_ms * sr / 1000):
+        # Segment too short for analysis
+        return None, np.array([]), np.array([])
+    
+    # Convert frame parameters to samples
+    frame_length = int(frame_length_ms * sr / 1000)
+    hop_length = int(hop_length_ms * sr / 1000)
+    
+    # Ensure fmin is valid for the given frame_length and sr
+    # fmin must be >= sr / frame_length
+    min_valid_fmin = sr / frame_length
+    actual_fmin = max(fmin, min_valid_fmin + 1.0)  # Add small margin for safety
+    
+    # Use pyin for pitch tracking with voicing detection
+    # pyin returns (f0, voiced_flag, voiced_probs)
+    try:
+        f0, voiced_flag, voiced_probs = librosa.pyin(
+            segment,
+            fmin=actual_fmin,
+            fmax=fmax,
+            sr=sr,
+            frame_length=frame_length,
+            hop_length=hop_length,
+            fill_na=np.nan
+        )
+    except Exception:
+        # If pyin fails for any reason, return empty results
+        return None, np.array([]), np.array([])
+    
+    # Find the first voiced frame
+    voicing_onset_frame = None
+    for i, is_voiced in enumerate(voiced_flag):
+        if is_voiced:
+            voicing_onset_frame = i
+            break
+    
+    if voicing_onset_frame is None:
+        return None, f0, voiced_flag
+    
+    # Convert frame index to sample index (relative to start_sample)
+    # The center of frame i is at sample index i * hop_length + frame_length // 2
+    voicing_onset_relative = voicing_onset_frame * hop_length
+    voicing_onset_sample = start_sample + voicing_onset_relative
+    
+    return voicing_onset_sample, f0, voiced_flag
+
+
+def find_ta_transition(
+    y: np.ndarray,
+    sr: int,
+    t_peak_sample: int,
+    *,
+    max_transition_sec: float = 0.2,
+    fmin: float = 50.0,
+    fmax: float = 500.0,
+    voicing_frame_length_ms: float = 25.0,
+    voicing_hop_length_ms: float = 5.0,
+    use_rms_fallback: bool = True,
+    rms_threshold_ratio: float = 0.1,
+) -> dict:
+    """
+    Find the T-A transition point in a 'ta' syllable.
+    
+    This function implements high-precision TA detection by:
+    1. Using voicing detection (F0 estimation via pyin) to find where voice starts after T peak
+    2. Enforcing a maximum transition time constraint (physiological/acoustic limit)
+    3. Optionally falling back to RMS envelope detection if voicing not found
+    
+    The T (voiceless plosive) cannot sustain for long - typically the T-to-A transition
+    should occur within 0.2 seconds. If the detected voicing onset exceeds this limit,
+    it is corrected to t_peak + max_transition_sec.
+    
+    Args:
+        y: mono audio signal.
+        sr: sampling rate in Hz.
+        t_peak_sample: sample index of the T burst peak.
+        max_transition_sec: maximum allowed transition time from T peak to A onset.
+                           Default 0.2 seconds based on physiological constraints.
+        fmin: minimum F0 frequency for voicing detection (Hz). Default 50 Hz.
+        fmax: maximum F0 frequency for voicing detection (Hz).
+        voicing_frame_length_ms: frame length for pyin pitch analysis.
+        voicing_hop_length_ms: hop size for pyin pitch analysis.
+        use_rms_fallback: if True, use RMS envelope for A onset if voicing not found.
+        rms_threshold_ratio: threshold ratio for RMS-based onset detection (default 10%).
+    
+    Returns:
+        dict containing:
+            - 't_peak_sec': T peak time in seconds
+            - 'a_start_sec': A onset time in seconds
+            - 'transition_sec': transition duration in seconds
+            - 'detection_method': 'voicing', 'rms_fallback', or 'max_limit'
+            - 'voicing_info': dict with f0 and voiced_flag arrays (if voicing used)
+            - 'corrected': True if transition was corrected due to exceeding max limit
+    """
+    t_peak_sec = t_peak_sample / sr
+    max_transition_samples = int(max_transition_sec * sr)
+    
+    result = {
+        't_peak_sec': t_peak_sec,
+        'a_start_sec': None,
+        'transition_sec': None,
+        'detection_method': None,
+        'voicing_info': None,
+        'corrected': False
+    }
+    
+    # Handle edge case: max_transition_sec is 0 or negative
+    if max_transition_sec <= 0:
+        result['a_start_sec'] = t_peak_sec
+        result['transition_sec'] = 0.0
+        result['detection_method'] = 'max_limit_zero'
+        result['corrected'] = True
+        result['voicing_info'] = {'f0': [], 'voiced_flag': []}
+        return result
+    
+    # Try voicing detection first
+    voicing_onset_sample, f0, voiced_flag = detect_voicing_onset(
+        y, sr, t_peak_sample,
+        fmin=fmin,
+        fmax=fmax,
+        frame_length_ms=voicing_frame_length_ms,
+        hop_length_ms=voicing_hop_length_ms
+    )
+    
+    result['voicing_info'] = {
+        'f0': f0.tolist() if len(f0) > 0 else [],
+        'voiced_flag': voiced_flag.tolist() if len(voiced_flag) > 0 else []
+    }
+    
+    if voicing_onset_sample is not None:
+        # Voicing detected
+        a_start_sample = voicing_onset_sample
+        transition_samples = a_start_sample - t_peak_sample
+        
+        # Check if transition exceeds maximum allowed time
+        if transition_samples > max_transition_samples:
+            # Correct to max transition time
+            a_start_sample = t_peak_sample + max_transition_samples
+            result['corrected'] = True
+            result['detection_method'] = 'voicing_corrected'
+        else:
+            result['detection_method'] = 'voicing'
+        
+        result['a_start_sec'] = a_start_sample / sr
+        result['transition_sec'] = result['a_start_sec'] - t_peak_sec
+        
+    elif use_rms_fallback:
+        # Fall back to RMS envelope detection
+        # Look for energy rise after T peak
+        search_end = min(len(y), t_peak_sample + max_transition_samples * 2)
+        segment = y[t_peak_sample:search_end]
+        
+        if len(segment) > 0:
+            # Compute Hilbert envelope for energy detection
+            env = compute_hilbert_envelope(segment, sr)
+            
+            if len(env) > 0:
+                max_env = np.max(env)
+                threshold = rms_threshold_ratio * max_env
+                
+                # Find where envelope exceeds threshold
+                a_start_relative = None
+                for i, val in enumerate(env):
+                    if val >= threshold:
+                        a_start_relative = i
+                        break
+                
+                if a_start_relative is not None:
+                    a_start_sample = t_peak_sample + a_start_relative
+                    
+                    # Apply max transition constraint
+                    if a_start_sample - t_peak_sample > max_transition_samples:
+                        a_start_sample = t_peak_sample + max_transition_samples
+                        result['corrected'] = True
+                        result['detection_method'] = 'rms_fallback_corrected'
+                    else:
+                        result['detection_method'] = 'rms_fallback'
+                    
+                    result['a_start_sec'] = a_start_sample / sr
+                    result['transition_sec'] = result['a_start_sec'] - t_peak_sec
+    
+    # If still no A onset found, use max transition as fallback
+    if result['a_start_sec'] is None:
+        result['a_start_sec'] = t_peak_sec + max_transition_sec
+        result['transition_sec'] = max_transition_sec
+        result['detection_method'] = 'max_limit_fallback'
+        result['corrected'] = True
+    
+    return result
+
+
+def detect_ta_onsets_with_voicing(
+    wav_path: str,
+    tg_path: str,
+    *,
+    tier_name: str = "phones",
+    phone_label: str = "t",
+    high_freq_min: float = 2000.0,
+    frame_length_ms: float = 5.0,
+    hop_length_ms: float = 1.0,
+    diff_threshold_std: float = 2.0,
+    max_transition_sec: float = 0.2,
+    fmin: float = 50.0,
+    fmax: float = 500.0,
+    voicing_frame_length_ms: float = 25.0,
+    voicing_hop_length_ms: float = 5.0,
+) -> tuple[np.ndarray, np.ndarray, list[dict]]:
+    """
+    Detect T burst onsets and A (vowel) onsets using voicing detection.
+    
+    This is an enhanced version of detect_t_burst_onsets_from_mfa that also
+    detects the A onset using pitch tracking (voicing detection).
+    
+    Algorithm:
+        1. Use MFA TextGrid to identify 't' phone intervals
+        2. Detect T burst onset using high-frequency RMS envelope
+        3. Find T peak (maximum amplitude after T burst)
+        4. Detect A onset using voicing detection (pyin F0 tracking)
+        5. Apply transition time constraints
+    
+    Args:
+        wav_path: path to WAV file.
+        tg_path: path to MFA TextGrid file.
+        tier_name: name of the phone tier in TextGrid.
+        phone_label: phone label to search for (default 't').
+        high_freq_min: minimum frequency for high-pass filtering T burst detection.
+        frame_length_ms: frame length for RMS envelope.
+        hop_length_ms: hop size for RMS envelope.
+        diff_threshold_std: threshold for derivative-based onset detection.
+        max_transition_sec: maximum T-A transition time (default 0.2s).
+        fmin: minimum F0 for voicing detection.
+        fmax: maximum F0 for voicing detection.
+        voicing_frame_length_ms: frame length for pyin.
+        voicing_hop_length_ms: hop size for pyin.
+    
+    Returns:
+        t_onset_times: 1D array of T burst onset times (seconds).
+        a_onset_times: 1D array of A (vowel) onset times (seconds).
+        ta_details: list of dicts with detailed detection info for each TA syllable.
+    """
+    # Load audio
+    y, sr = librosa.load(wav_path, sr=None, mono=True)
+    
+    # Load TextGrid
+    tg = TextGrid.fromFile(tg_path)
+    
+    # Find the specified tier
+    tier = None
+    for t in tg.tiers:
+        if t.name == tier_name:
+            tier = t
+            break
+    
+    if tier is None:
+        raise ValueError(f"Tier '{tier_name}' not found in TextGrid")
+    
+    t_onset_times = []
+    a_onset_times = []
+    ta_details = []
+    
+    # Process each interval with the target phone label
+    for interval in tier:
+        if interval.mark == phone_label:
+            min_time = interval.minTime
+            max_time = interval.maxTime
+            
+            # Extract audio segment for T burst detection
+            start_sample = int(min_time * sr)
+            end_sample = int(max_time * sr)
+            
+            # Ensure we don't go out of bounds
+            start_sample = max(0, start_sample)
+            end_sample = min(len(y), end_sample)
+            
+            if end_sample <= start_sample:
+                # Empty interval, skip
+                continue
+            
+            segment = y[start_sample:end_sample]
+            
+            # Step 1: Detect T burst onset using high-frequency RMS envelope
+            env, times = compute_rms_envelope(
+                segment, sr,
+                band=(high_freq_min, None),
+                frame_length_ms=frame_length_ms,
+                hop_length_ms=hop_length_ms
+            )
+            
+            local_onsets = detect_onsets_from_envelope(
+                env, times,
+                diff_threshold_std=diff_threshold_std,
+                min_interval_ms=10.0
+            )
+            
+            if len(local_onsets) > 0:
+                t_burst_onset_local = local_onsets[0]
+                t_burst_onset_abs = min_time + t_burst_onset_local
+            else:
+                t_burst_onset_abs = min_time
+            
+            t_onset_times.append(t_burst_onset_abs)
+            
+            # Step 2: Find T peak (max amplitude in high-freq envelope after burst)
+            # Look for peak in the segment after T burst onset
+            t_burst_onset_sample = int(t_burst_onset_abs * sr)
+            
+            # Compute Hilbert envelope for peak detection
+            env_full = compute_hilbert_envelope(y, sr, band=(high_freq_min, None))
+            
+            # Find peak in a window after T burst onset (within 50ms typically)
+            peak_search_window = int(0.05 * sr)  # 50ms window
+            peak_search_end = min(len(env_full), t_burst_onset_sample + peak_search_window)
+            
+            if t_burst_onset_sample < len(env_full):
+                env_window = env_full[t_burst_onset_sample:peak_search_end]
+                if len(env_window) > 0:
+                    peak_idx_local = np.argmax(env_window)
+                    t_peak_sample = t_burst_onset_sample + peak_idx_local
+                else:
+                    t_peak_sample = t_burst_onset_sample
+            else:
+                t_peak_sample = t_burst_onset_sample
+            
+            # Step 3: Find A onset using voicing detection
+            ta_result = find_ta_transition(
+                y, sr, t_peak_sample,
+                max_transition_sec=max_transition_sec,
+                fmin=fmin,
+                fmax=fmax,
+                voicing_frame_length_ms=voicing_frame_length_ms,
+                voicing_hop_length_ms=voicing_hop_length_ms,
+                use_rms_fallback=True
+            )
+            
+            a_onset_times.append(ta_result['a_start_sec'])
+            
+            # Record detailed info
+            detail = {
+                't_burst_onset_sec': t_burst_onset_abs,
+                't_peak_sec': ta_result['t_peak_sec'],
+                'a_start_sec': ta_result['a_start_sec'],
+                'transition_sec': ta_result['transition_sec'],
+                'detection_method': ta_result['detection_method'],
+                'corrected': ta_result['corrected'],
+                'interval_min': min_time,
+                'interval_max': max_time
+            }
+            ta_details.append(detail)
+    
+    return np.array(t_onset_times), np.array(a_onset_times), ta_details
+
+
+def plot_ta_detection_results(
+    wav_path: str,
+    t_onset_times: np.ndarray,
+    a_onset_times: np.ndarray,
+    ta_details: list[dict],
+    *,
+    title: str = "",
+    show_voicing: bool = False,
+) -> None:
+    """
+    Plot TA detection results with T burst onsets and A vowel onsets.
+    
+    Args:
+        wav_path: path to WAV file.
+        t_onset_times: array of T burst onset times.
+        a_onset_times: array of A vowel onset times.
+        ta_details: list of detection detail dicts.
+        title: optional plot title.
+        show_voicing: if True, show voicing detection info (requires ta_details with voicing_info).
+    """
+    y, sr = librosa.load(wav_path, sr=None, mono=True)
+    time_axis = np.arange(len(y)) / sr
+    
+    fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+    
+    # Plot waveform
+    ax1 = axes[0]
+    ax1.plot(time_axis, y, alpha=0.6, linewidth=0.5, color='gray', label='Waveform')
+    ax1.set_ylabel('Amplitude')
+    ax1.set_title(title if title else f'TA Detection Results: {wav_path}')
+    ax1.grid(True, alpha=0.3)
+    
+    # Mark T onsets (red)
+    for i, t_time in enumerate(t_onset_times):
+        ax1.axvline(x=t_time, color='red', linestyle='--', alpha=0.8, linewidth=1.5,
+                   label='T burst onset' if i == 0 else None)
+    
+    # Mark A onsets (blue)
+    for i, a_time in enumerate(a_onset_times):
+        ax1.axvline(x=a_time, color='blue', linestyle='-', alpha=0.8, linewidth=1.5,
+                   label='A vowel onset' if i == 0 else None)
+    
+    ax1.legend(loc='upper right')
+    
+    # Plot Hilbert envelope
+    ax2 = axes[1]
+    env = compute_hilbert_envelope(y, sr)
+    ax2.plot(time_axis, env, color='orange', linewidth=1.0, label='Hilbert envelope')
+    ax2.set_xlabel('Time (s)')
+    ax2.set_ylabel('Envelope')
+    ax2.grid(True, alpha=0.3)
+    
+    # Mark onsets on envelope
+    for t_time in t_onset_times:
+        ax2.axvline(x=t_time, color='red', linestyle='--', alpha=0.8, linewidth=1.5)
+    
+    for a_time in a_onset_times:
+        ax2.axvline(x=a_time, color='blue', linestyle='-', alpha=0.8, linewidth=1.5)
+    
+    # Add annotation for transition times
+    for i, detail in enumerate(ta_details):
+        if detail.get('transition_sec') is not None:
+            mid_time = (detail['t_peak_sec'] + detail['a_start_sec']) / 2
+            method = detail.get('detection_method', 'unknown')
+            corrected = ' (corrected)' if detail.get('corrected') else ''
+            ax2.annotate(
+                f'{detail["transition_sec"]*1000:.1f}ms\n{method}{corrected}',
+                xy=(mid_time, np.max(env) * 0.8),
+                ha='center', fontsize=8,
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+            )
+    
+    ax2.legend(loc='upper right')
+    
+    plt.tight_layout()
+    plt.show()
 
 
 def plot_envelope_with_onsets(
