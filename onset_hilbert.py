@@ -574,9 +574,6 @@ def plot_waveform_and_envelope_interactive(
     # Store current onset/peak times for manual editing
     current_onsets = list(onset_times)
     current_peaks = list(peak_times)
-    # Store current onset/peak times for manual editing
-    current_onsets = list(onset_times)
-    current_peaks = list(peak_times)
     
     def update_plot(new_hp_cutoff: float, new_threshold_ratio: float, preserve_xlim: bool = False):
         """Update the plot with new detection results using Fujii method."""
