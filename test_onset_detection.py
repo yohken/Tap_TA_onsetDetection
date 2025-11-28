@@ -299,6 +299,220 @@ class TestHilbertEnvelope(unittest.TestCase):
         self.assertTrue(np.all(env_hpf >= 0))
 
 
+class TestVoiceSegmentDetection(unittest.TestCase):
+    """Test cases for voice segment detection with feature extraction.
+    
+    These tests validate the new voice segment detection functions that
+    detect segments (e.g., 'ta' syllables) and extract feature points:
+    - t_start: segment start
+    - t_peak: burst maximum
+    - a_start: vowel onset
+    - a_stable: vowel stabilization
+    - end: segment end
+    """
+    
+    @classmethod
+    def setUpClass(cls):
+        """Create synthetic test audio with two 'ta'-like sounds."""
+        sr = 44100
+        duration = 1.0
+        t = np.linspace(0, duration, int(sr * duration))
+        
+        audio = np.zeros_like(t)
+        cls.expected_segment_times = [0.2, 0.6]
+        
+        for burst_time in cls.expected_segment_times:
+            # Consonant part (short burst)
+            burst_start = int(burst_time * sr)
+            burst_len = int(0.02 * sr)  # 20ms burst
+            if burst_start + burst_len < len(audio):
+                decay = np.exp(-np.linspace(0, 5, burst_len))
+                noise = np.random.randn(burst_len)
+                audio[burst_start:burst_start + burst_len] = noise * decay * 0.5
+            
+            # Vowel part (longer sustain)
+            vowel_start = burst_start + burst_len
+            vowel_len = int(0.15 * sr)  # 150ms vowel
+            if vowel_start + vowel_len < len(audio):
+                vowel_t = np.linspace(0, 0.15, vowel_len)
+                vowel_env = np.sin(np.pi * vowel_t / 0.15)
+                vowel_freq = 440
+                vowel = np.sin(2 * np.pi * vowel_freq * vowel_t) * vowel_env * 0.3
+                audio[vowel_start:vowel_start + vowel_len] += vowel
+        
+        audio = audio / np.max(np.abs(audio)) * 0.8
+        cls.audio = audio
+        cls.sr = sr
+        
+        # Save to temp file
+        audio_int16 = (audio * 32767).astype(np.int16)
+        cls.temp_wav = tempfile.NamedTemporaryFile(suffix='_voice_segment.wav', delete=False)
+        cls.temp_wav_path = cls.temp_wav.name
+        cls.temp_wav.close()
+        wavfile.write(cls.temp_wav_path, sr, audio_int16)
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up temporary files."""
+        if os.path.exists(cls.temp_wav_path):
+            os.unlink(cls.temp_wav_path)
+    
+    def test_detect_voice_segments_count(self):
+        """Test that correct number of voice segments are detected."""
+        # Import function with mock tkinter
+        import sys
+        import unittest.mock as mock
+        if 'tkinter' not in sys.modules:
+            sys.modules['tkinter'] = mock.MagicMock()
+            sys.modules['tkinter.filedialog'] = mock.MagicMock()
+            sys.modules['tkinter.messagebox'] = mock.MagicMock()
+            sys.modules['tkinter.ttk'] = mock.MagicMock()
+        
+        import importlib
+        import onset_detection_gui
+        importlib.reload(onset_detection_gui)
+        
+        segments = onset_detection_gui.detect_voice_segments(
+            self.audio, self.sr,
+            amplitude_threshold_ratio=0.05
+        )
+        
+        self.assertEqual(len(segments), len(self.expected_segment_times),
+                        f"Expected {len(self.expected_segment_times)} segments, got {len(segments)}")
+    
+    def test_detect_voice_segments_timing(self):
+        """Test that detected segments are near expected times."""
+        import sys
+        import unittest.mock as mock
+        if 'tkinter' not in sys.modules:
+            sys.modules['tkinter'] = mock.MagicMock()
+            sys.modules['tkinter.filedialog'] = mock.MagicMock()
+            sys.modules['tkinter.messagebox'] = mock.MagicMock()
+            sys.modules['tkinter.ttk'] = mock.MagicMock()
+        
+        import importlib
+        import onset_detection_gui
+        importlib.reload(onset_detection_gui)
+        
+        segments = onset_detection_gui.detect_voice_segments(
+            self.audio, self.sr,
+            amplitude_threshold_ratio=0.05
+        )
+        
+        for exp_time in self.expected_segment_times:
+            # Find closest segment start
+            segment_starts = [start / self.sr for start, end in segments]
+            diffs = [abs(start - exp_time) for start in segment_starts]
+            min_diff = min(diffs)
+            
+            # Should be within 100ms of expected time
+            self.assertLess(min_diff, 0.1,
+                          f"No segment detected near {exp_time}s (closest: {min_diff}s)")
+    
+    def test_extract_feature_points_structure(self):
+        """Test that feature points have correct structure."""
+        import sys
+        import unittest.mock as mock
+        if 'tkinter' not in sys.modules:
+            sys.modules['tkinter'] = mock.MagicMock()
+            sys.modules['tkinter.filedialog'] = mock.MagicMock()
+            sys.modules['tkinter.messagebox'] = mock.MagicMock()
+            sys.modules['tkinter.ttk'] = mock.MagicMock()
+        
+        import importlib
+        import onset_detection_gui
+        importlib.reload(onset_detection_gui)
+        
+        segments = onset_detection_gui.detect_voice_segments(
+            self.audio, self.sr,
+            amplitude_threshold_ratio=0.05
+        )
+        
+        required_keys = ['t_start', 't_peak', 'a_start', 'a_stable', 'end']
+        
+        for start, end in segments:
+            features = onset_detection_gui.extract_feature_points(
+                self.audio, self.sr, start, end
+            )
+            
+            # Check all required keys exist
+            for key in required_keys:
+                self.assertIn(key, features, f"Feature point '{key}' missing")
+            
+            # Check values are numeric
+            for key, val in features.items():
+                self.assertIsInstance(val, float, f"Feature '{key}' should be float")
+    
+    def test_feature_points_ordering(self):
+        """Test that feature points are in correct temporal order."""
+        import sys
+        import unittest.mock as mock
+        if 'tkinter' not in sys.modules:
+            sys.modules['tkinter'] = mock.MagicMock()
+            sys.modules['tkinter.filedialog'] = mock.MagicMock()
+            sys.modules['tkinter.messagebox'] = mock.MagicMock()
+            sys.modules['tkinter.ttk'] = mock.MagicMock()
+        
+        import importlib
+        import onset_detection_gui
+        importlib.reload(onset_detection_gui)
+        
+        segments = onset_detection_gui.detect_voice_segments(
+            self.audio, self.sr,
+            amplitude_threshold_ratio=0.05
+        )
+        
+        for start, end in segments:
+            features = onset_detection_gui.extract_feature_points(
+                self.audio, self.sr, start, end
+            )
+            
+            # Feature points should be in order: t_start <= t_peak <= a_start <= a_stable <= end
+            self.assertLessEqual(features['t_start'], features['t_peak'],
+                               "t_start should be <= t_peak")
+            self.assertLessEqual(features['t_peak'], features['a_start'],
+                               "t_peak should be <= a_start")
+            self.assertLessEqual(features['a_start'], features['a_stable'],
+                               "a_start should be <= a_stable")
+            self.assertLessEqual(features['a_stable'], features['end'],
+                               "a_stable should be <= end")
+    
+    def test_detect_voice_segments_with_features_integration(self):
+        """Test the combined detection and feature extraction function."""
+        import sys
+        import unittest.mock as mock
+        if 'tkinter' not in sys.modules:
+            sys.modules['tkinter'] = mock.MagicMock()
+            sys.modules['tkinter.filedialog'] = mock.MagicMock()
+            sys.modules['tkinter.messagebox'] = mock.MagicMock()
+            sys.modules['tkinter.ttk'] = mock.MagicMock()
+        
+        import importlib
+        import onset_detection_gui
+        importlib.reload(onset_detection_gui)
+        
+        y, sr, features_list = onset_detection_gui.detect_voice_segments_with_features(
+            self.temp_wav_path,
+            amplitude_threshold_ratio=0.05
+        )
+        
+        # Check audio was loaded
+        self.assertGreater(len(y), 0, "Audio should be loaded")
+        self.assertEqual(sr, self.sr, "Sample rate should match")
+        
+        # Check features list
+        self.assertEqual(len(features_list), len(self.expected_segment_times),
+                        "Should detect expected number of segments")
+        
+        # Check each feature dict
+        for features in features_list:
+            self.assertIn('t_start', features)
+            self.assertIn('t_peak', features)
+            self.assertIn('a_start', features)
+            self.assertIn('a_stable', features)
+            self.assertIn('end', features)
+
+
 class TestGUIModule(unittest.TestCase):
     """Test cases for GUI module structure."""
     
@@ -322,6 +536,7 @@ class TestGUIModule(unittest.TestCase):
         required_methods = [
             'detect_tap_onsets',
             'detect_t_burst_onsets',
+            'detect_voice_segments',
             'update_status',
             'append_result',
             'clear_results'
