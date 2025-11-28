@@ -776,5 +776,79 @@ class TestCSVExportWithRetry(unittest.TestCase):
                 os.unlink(csv_path)
 
 
+class TestComputeSpectrogram(unittest.TestCase):
+    """Test cases for compute_spectrogram function."""
+    
+    def test_spectrogram_returns_correct_types(self):
+        """Test that compute_spectrogram returns arrays of correct types."""
+        sr = 48000
+        duration = 1.0
+        t = np.linspace(0, duration, int(sr * duration))
+        y = np.sin(2 * np.pi * 440 * t)  # 440 Hz sine wave
+        
+        S_db, times, frequencies = onset_hilbert.compute_spectrogram(y, sr)
+        
+        # Check types
+        self.assertIsInstance(S_db, np.ndarray)
+        self.assertIsInstance(times, np.ndarray)
+        self.assertIsInstance(frequencies, np.ndarray)
+    
+    def test_spectrogram_shape(self):
+        """Test that spectrogram has correct shape."""
+        sr = 48000
+        duration = 1.0
+        t = np.linspace(0, duration, int(sr * duration))
+        y = np.sin(2 * np.pi * 440 * t)
+        
+        S_db, times, frequencies = onset_hilbert.compute_spectrogram(y, sr)
+        
+        # S_db should be 2D (n_mels x n_frames)
+        self.assertEqual(len(S_db.shape), 2)
+        
+        # Number of time frames should match times array
+        self.assertEqual(S_db.shape[1], len(times))
+        
+        # Number of frequency bins should match frequencies array
+        self.assertEqual(S_db.shape[0], len(frequencies))
+    
+    def test_spectrogram_values_in_db(self):
+        """Test that spectrogram values are in dB scale (should be <= 0 for reference-normalized)."""
+        sr = 48000
+        duration = 1.0
+        t = np.linspace(0, duration, int(sr * duration))
+        y = np.sin(2 * np.pi * 440 * t)
+        
+        S_db, times, frequencies = onset_hilbert.compute_spectrogram(y, sr)
+        
+        # dB values should be <= 0 (since ref=np.max in librosa.power_to_db)
+        self.assertLessEqual(np.max(S_db), 0)
+    
+    def test_spectrogram_custom_fmax(self):
+        """Test spectrogram with custom fmax parameter."""
+        sr = 48000
+        duration = 0.5
+        t = np.linspace(0, duration, int(sr * duration))
+        y = np.sin(2 * np.pi * 1000 * t)
+        
+        # Test with lower fmax
+        S_db, times, frequencies = onset_hilbert.compute_spectrogram(y, sr, fmax=4000.0)
+        
+        # Maximum frequency should be approximately fmax
+        self.assertLessEqual(frequencies[-1], 4000.0)
+    
+    def test_spectrogram_function_exists(self):
+        """Test that compute_spectrogram function exists in module."""
+        self.assertTrue(
+            hasattr(onset_hilbert, 'compute_spectrogram'),
+            "Module missing function: compute_spectrogram"
+        )
+    
+    def test_spectrogram_has_docstring(self):
+        """Test that compute_spectrogram has documentation."""
+        func = onset_hilbert.compute_spectrogram
+        self.assertIsNotNone(func.__doc__)
+        self.assertGreater(len(func.__doc__.strip()), 10)
+
+
 if __name__ == '__main__':
     unittest.main()

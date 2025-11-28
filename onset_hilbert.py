@@ -8,7 +8,7 @@ This module implements a Fujii-style onset detection method using:
 - Onset defined as when envelope first exceeds 10% of local peak amplitude
 
 Target Python version: 3.10+
-Dependencies: numpy, scipy, soundfile, matplotlib, pandas, tkinter
+Dependencies: numpy, scipy, soundfile, matplotlib, pandas, tkinter, librosa
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from scipy.signal import butter, sosfiltfilt, hilbert, find_peaks
 import soundfile as sf
 import matplotlib.pyplot as plt
 import pandas as pd
+import librosa
 
 
 def highpass_filter(
@@ -85,6 +86,47 @@ def hilbert_envelope(
             env = np.convolve(env, kernel, mode='same')
     
     return env
+
+
+def compute_spectrogram(
+    y: np.ndarray,
+    sr: int,
+    *,
+    n_fft: int = 2048,
+    hop_length: int | None = None,
+    fmax: float | None = 8000.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute a mel-spectrogram for visualization (PRAAT-style).
+    
+    Args:
+        y: mono audio signal.
+        sr: sampling rate [Hz].
+        n_fft: FFT window size.
+        hop_length: hop size in samples. If None, defaults to n_fft // 4.
+        fmax: maximum frequency to display (Hz). If None, uses sr/2.
+    
+    Returns:
+        S_db: spectrogram in dB scale, shape (n_freq_bins, n_frames).
+        times: time axis array for spectrogram frames.
+        frequencies: frequency axis array.
+    """
+    if hop_length is None:
+        hop_length = n_fft // 4
+    
+    # Compute mel spectrogram
+    S = librosa.feature.melspectrogram(
+        y=y, sr=sr, n_fft=n_fft, hop_length=hop_length, fmax=fmax
+    )
+    
+    # Convert to dB scale
+    S_db = librosa.power_to_db(S, ref=np.max)
+    
+    # Compute time and frequency axes
+    times = librosa.frames_to_time(np.arange(S_db.shape[1]), sr=sr, hop_length=hop_length)
+    frequencies = librosa.mel_frequencies(n_mels=S_db.shape[0], fmax=fmax if fmax else sr / 2)
+    
+    return S_db, times, frequencies
 
 
 def detect_onsets_and_peaks_from_envelope(
@@ -524,6 +566,7 @@ def plot_waveform_and_envelope_interactive(
     - Interactive slider to adjust HPF cutoff frequency (100-2000 Hz)
     - Interactive slider to adjust detection threshold (1%-50%)
     - Re-detect button to recompute onsets with new parameters
+    - Spectrogram button to toggle mel-spectrogram overlay (PRAAT-style)
     - X-axis zoom using mouse wheel
     - Optional: Cmd+Shift+Click to delete onset/peak markers
     - Optional: Export button to save data to CSV
@@ -577,6 +620,18 @@ def plot_waveform_and_envelope_interactive(
     # Create subplots for waveform and envelope
     ax1 = plt.subplot2grid((4, 1), (0, 0), rowspan=2)
     ax2 = plt.subplot2grid((4, 1), (2, 0), rowspan=2, sharex=ax1)
+    
+    # Compute spectrogram for overlay (using original unfiltered data)
+    S_db, spec_times, spec_freqs = compute_spectrogram(data, sr)
+    
+    # Create a secondary y-axis for frequency display (for spectrogram)
+    ax1_spec = ax1.twinx()
+    ax1_spec.set_ylabel('Frequency (Hz)')
+    ax1_spec.set_ylim(spec_freqs[0], spec_freqs[-1])
+    ax1_spec.set_visible(False)  # Initially hidden
+    
+    # State for spectrogram visibility
+    spectrogram_state = {'visible': False, 'image': None}
     
     # Initial plot - waveform
     time_axis = np.arange(len(y_filt)) / sr
@@ -659,19 +714,65 @@ def plot_waveform_and_envelope_interactive(
     button_height = 0.04
     button_y = 0.03
     
+    # Calculate button positions - need to accommodate Spectrogram button
+    current_pos = 0.27
+    
     # Re-detect button
     ax_redetect = plt.axes([0.15, button_y, button_width, button_height])
     button_redetect = Button(ax_redetect, 'Re-detect')
     
+    # Spectrogram toggle button (always shown)
+    ax_spectrogram = plt.axes([current_pos, button_y, button_width, button_height])
+    button_spectrogram = Button(ax_spectrogram, 'Spectrogram')
+    current_pos += button_width + 0.02
+    
     # Export button (if enabled)
     if enable_export:
-        ax_export = plt.axes([0.27, button_y, button_width, button_height])
+        ax_export = plt.axes([current_pos, button_y, button_width, button_height])
         button_export = Button(ax_export, 'Export')
+        current_pos += button_width + 0.02
     
     # Next button (if callback provided)
     if on_next_callback is not None:
-        ax_next = plt.axes([0.39, button_y, button_width, button_height])
+        ax_next = plt.axes([current_pos, button_y, button_width, button_height])
         button_next = Button(ax_next, 'Next')
+    
+    def toggle_spectrogram(event):
+        """Toggle spectrogram overlay visibility."""
+        if spectrogram_state['visible']:
+            # Hide spectrogram
+            if spectrogram_state['image'] is not None:
+                spectrogram_state['image'].remove()
+                spectrogram_state['image'] = None
+            ax1_spec.set_visible(False)
+            waveform_line.set_alpha(0.5)
+            spectrogram_state['visible'] = False
+            button_spectrogram.label.set_text('Spectrogram')
+        else:
+            # Show spectrogram
+            # Get current axis limits for extent
+            extent = [spec_times[0], spec_times[-1], spec_freqs[0], spec_freqs[-1]]
+            
+            # Display spectrogram on ax1 using imshow with transparency
+            spectrogram_state['image'] = ax1.imshow(
+                S_db,
+                aspect='auto',
+                origin='lower',
+                extent=extent,
+                cmap='magma',
+                alpha=0.6,
+                interpolation='bilinear',
+                zorder=0  # Put behind the waveform
+            )
+            ax1_spec.set_visible(True)
+            ax1_spec.set_ylim(spec_freqs[0], spec_freqs[-1])
+            waveform_line.set_alpha(0.8)  # Make waveform more visible
+            spectrogram_state['visible'] = True
+            button_spectrogram.label.set_text('Hide Spec')
+        
+        fig.canvas.draw_idle()
+    
+    button_spectrogram.on_clicked(toggle_spectrogram)
     
     # Store current onset/peak times for manual editing
     current_onsets = list(onset_times)
