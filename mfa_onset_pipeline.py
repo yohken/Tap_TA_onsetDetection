@@ -52,6 +52,8 @@ class MFAParameters:
     diff_threshold_std: float = 2.0
     tier_name: str = "phones"
     phone_label: str = "t"
+    # New: consonant labels for phoneme-based detection
+    consonant_labels: Optional[list[str]] = None
 
 
 @dataclass
@@ -63,6 +65,18 @@ class HilbertParameters:
     lookback_points: int = 74
     min_interval_ms: float = 50.0
     prominence_ratio: float = 0.3
+
+
+@dataclass
+class TADetectionResult:
+    """Result from TA (T-peak and A-onset) detection using MFA phonemes"""
+    method: str
+    t_peak_times: list[float]  # Consonant burst explosion points
+    a_onset_times: list[float]  # Vowel onset times from MFA boundaries
+    t_burst_onset_times: list[float]  # When T burst energy starts rising
+    details: list[dict]  # Full detection details for each TA syllable
+    parameters: Optional[dict] = None
+    error: Optional[str] = None
 
 
 @dataclass
@@ -277,6 +291,66 @@ class MFAOnsetPipeline:
                 error=str(e)
             )
     
+    def detect_ta_from_mfa_phonemes(
+        self,
+        wav_path: Path,
+        textgrid_path: Path
+    ) -> TADetectionResult:
+        """
+        Detect T-peak and A-onset using MFA phoneme boundaries.
+        
+        This method maximally leverages MFA's phoneme segmentation:
+        - T-peak: High-frequency energy maximum within 't' phoneme interval
+        - A-onset: Start time of following vowel phoneme from MFA TextGrid
+        
+        Args:
+            wav_path: Path to WAV file
+            textgrid_path: Path to TextGrid file
+        
+        Returns:
+            TADetectionResult with T-peaks, A-onsets, and detailed information
+        """
+        try:
+            # Determine consonant labels
+            consonant_labels = self.mfa_params.consonant_labels
+            if consonant_labels is None:
+                consonant_labels = [self.mfa_params.phone_label, self.mfa_params.phone_label.upper()]
+            
+            t_peaks, a_onsets, t_bursts, details = onset_detection.detect_ta_onsets_from_mfa_phonemes(
+                str(wav_path),
+                str(textgrid_path),
+                tier_name=self.mfa_params.tier_name,
+                consonant_labels=consonant_labels,
+                high_freq_min=self.mfa_params.high_freq_min,
+                frame_length_ms=self.mfa_params.frame_length_ms,
+                hop_length_ms=self.mfa_params.hop_length_ms
+            )
+            
+            self.logger.info(
+                f"MFA phoneme detection: {len(t_peaks)} T-peaks, "
+                f"{len(a_onsets)} A-onsets found in {wav_path.name}"
+            )
+            
+            return TADetectionResult(
+                method="MFA_phoneme",
+                t_peak_times=t_peaks.tolist(),
+                a_onset_times=a_onsets.tolist(),
+                t_burst_onset_times=t_bursts.tolist(),
+                details=details,
+                parameters=asdict(self.mfa_params)
+            )
+        
+        except Exception as e:
+            self.logger.error(f"Error in MFA phoneme detection for {wav_path.name}: {e}")
+            return TADetectionResult(
+                method="MFA_phoneme",
+                t_peak_times=[],
+                a_onset_times=[],
+                t_burst_onset_times=[],
+                details=[],
+                error=str(e)
+            )
+
     def detect_hilbert_onsets(
         self,
         wav_path: Path

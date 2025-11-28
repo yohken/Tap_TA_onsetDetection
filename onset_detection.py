@@ -7,7 +7,13 @@ Onset detection module for three types of audio signals:
 This module provides clean, well-documented Python code for onset detection
 using standard DSP techniques (no machine learning).
 
-NEW: High-precision TA Detection
+NEW: MFA-based T-peak and A-onset Detection (detect_ta_onsets_from_mfa_phonemes)
+- Directly uses MFA (Montreal Forced Aligner) phoneme boundaries for labeling
+- T-peak: High-frequency energy maximum within 't' phoneme interval (consonant explosion)
+- A-onset: Start time of following vowel phoneme from MFA TextGrid (linguistically accurate)
+- Key functions: detect_ta_onsets_from_mfa_phonemes(), plot_mfa_ta_detection_results()
+
+Additional: Voicing-based TA Detection
 - Uses voicing detection (librosa.pyin F0 tracking) to find A vowel onset
 - Enforces physiological/acoustic transition time constraints (max 0.2 seconds)
 - Combines RMS envelope T burst detection with voicing-based A onset detection
@@ -22,6 +28,7 @@ IMPORTANT NOTE FOR RE-DETECTION:
     * onset_hilbert.detect_tap_onsets_and_peaks() or detect_click_onsets_and_peaks() for detection
 
 This module remains useful for:
+- MFA-based T-peak and A-onset labeling (detect_ta_onsets_from_mfa_phonemes) [RECOMMENDED]
 - /t/ burst detection with TextGrid guidance (detect_t_burst_onsets_from_mfa)
 - High-precision TA detection with voicing (detect_ta_onsets_with_voicing)
 - Metronome onset generation (get_click_onsets_from_bpm)
@@ -562,6 +569,387 @@ def detect_t_burst_onsets_from_mfa(
                 burst_onsets.append(min_time)
     
     return np.array(burst_onsets)
+
+
+# Common vowel phoneme labels used by MFA (ARPABET notation)
+VOWEL_PHONEMES = {
+    # Monophthongs
+    'AA', 'AE', 'AH', 'AO', 'AW', 'AX', 'AY',
+    'EH', 'ER', 'EY',
+    'IH', 'IY',
+    'OW', 'OY',
+    'UH', 'UW',
+    # Japanese vowels (for Japanese MFA models)
+    'a', 'i', 'u', 'e', 'o',
+    # Additional variants
+    'aa', 'ae', 'ah', 'ao', 'aw', 'ax', 'ay',
+    'eh', 'er', 'ey',
+    'ih', 'iy',
+    'ow', 'oy',
+    'uh', 'uw',
+}
+
+
+def detect_ta_onsets_from_mfa_phonemes(
+    wav_path: str,
+    tg_path: str,
+    *,
+    tier_name: str = "phones",
+    consonant_labels: list[str] | None = None,
+    vowel_labels: set[str] | None = None,
+    high_freq_min: float = 2000.0,
+    frame_length_ms: float = 5.0,
+    hop_length_ms: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict]]:
+    """
+    Detect T-peak (consonant burst explosion) and A-onset (vowel start) using MFA phoneme boundaries.
+    
+    This function maximally leverages MFA's phoneme segmentation:
+    - T-peak: High-frequency energy maximum within the consonant ('t') phoneme interval
+    - A-onset: Start time of the following vowel phoneme interval from MFA TextGrid
+    
+    Unlike simple physical peak detection, this approach uses MFA's phonetic alignment
+    to provide linguistically accurate labeling of consonant bursts and vowel onsets.
+    
+    Algorithm:
+        1) Load audio and MFA TextGrid
+        2) For each consonant interval (e.g., 't'):
+           a) Find the high-frequency energy peak within the interval -> T-peak
+           b) Find the immediately following vowel interval
+           c) Use the vowel interval's start time as A-onset
+        3) Return T-peaks, A-onsets, and detailed information
+    
+    Args:
+        wav_path: Path to WAV file.
+        tg_path: Path to MFA TextGrid file.
+        tier_name: Name of the phone tier in TextGrid (default: "phones").
+        consonant_labels: List of consonant labels to detect (default: ["t", "T"]).
+        vowel_labels: Set of vowel labels to recognize (default: VOWEL_PHONEMES).
+        high_freq_min: Minimum frequency for T-peak detection (Hz).
+        frame_length_ms: Frame length for envelope computation (ms).
+        hop_length_ms: Hop length for envelope computation (ms).
+    
+    Returns:
+        t_peak_times: 1D array of T-peak times (seconds) - consonant burst explosions
+        a_onset_times: 1D array of A-onset times (seconds) - vowel start from MFA
+        t_burst_onset_times: 1D array of T-burst onset times (seconds) - energy rise start
+        ta_details: List of dicts with detailed detection info for each TA syllable:
+            - 't_burst_onset_sec': Time when T burst energy starts rising
+            - 't_peak_sec': Time of maximum T burst energy (explosion point)
+            - 'a_onset_sec': Time when vowel starts (from MFA boundary)
+            - 't_interval_start': MFA start time of 't' phoneme
+            - 't_interval_end': MFA end time of 't' phoneme
+            - 'vowel_label': MFA label of the following vowel phoneme
+            - 'vowel_interval_start': MFA start time of vowel phoneme
+            - 'vowel_interval_end': MFA end time of vowel phoneme
+            - 'detection_method': Always 'mfa_phoneme' for this function
+    
+    Raises:
+        ValueError: If the specified tier is not found in the TextGrid.
+        FileNotFoundError: If WAV or TextGrid file is not found.
+    
+    Example:
+        >>> t_peaks, a_onsets, t_bursts, details = detect_ta_onsets_from_mfa_phonemes(
+        ...     'speech.wav', 'speech.TextGrid'
+        ... )
+        >>> for detail in details:
+        ...     print(f"T-peak: {detail['t_peak_sec']:.3f}s, "
+        ...           f"A-onset ({detail['vowel_label']}): {detail['a_onset_sec']:.3f}s")
+    """
+    # Set default consonant labels
+    if consonant_labels is None:
+        consonant_labels = ['t', 'T']
+    
+    # Set default vowel labels
+    if vowel_labels is None:
+        vowel_labels = VOWEL_PHONEMES
+    
+    # Load audio
+    y, sr = librosa.load(wav_path, sr=None, mono=True)
+    
+    # Load TextGrid
+    tg = TextGrid.fromFile(tg_path)
+    
+    # Find the specified tier
+    tier = None
+    for t in tg.tiers:
+        if t.name == tier_name:
+            tier = t
+            break
+    
+    if tier is None:
+        raise ValueError(f"Tier '{tier_name}' not found in TextGrid")
+    
+    # Convert tier to list for indexed access
+    intervals = list(tier)
+    
+    # Collect results
+    t_peak_times = []
+    a_onset_times = []
+    t_burst_onset_times = []
+    ta_details = []
+    
+    # Process each interval
+    for i, interval in enumerate(intervals):
+        # Check if this is a target consonant
+        if interval.mark not in consonant_labels:
+            continue
+        
+        t_min_time = interval.minTime
+        t_max_time = interval.maxTime
+        
+        # Extract audio segment for T burst detection
+        start_sample = int(t_min_time * sr)
+        end_sample = int(t_max_time * sr)
+        
+        # Ensure bounds
+        start_sample = max(0, start_sample)
+        end_sample = min(len(y), end_sample)
+        
+        if end_sample <= start_sample:
+            continue
+        
+        segment = y[start_sample:end_sample]
+        
+        # === T-peak detection: Find high-frequency energy maximum ===
+        # Compute Hilbert envelope with high-frequency filtering
+        env = compute_hilbert_envelope(segment, sr, band=(high_freq_min, None))
+        
+        if len(env) > 0:
+            # Find the peak (maximum energy) within the segment
+            peak_idx_local = np.argmax(env)
+            t_peak_time = t_min_time + peak_idx_local / sr
+            
+            # Find burst onset (where energy starts rising) using RMS envelope derivative
+            env_rms, times_rms = compute_rms_envelope(
+                segment, sr,
+                band=(high_freq_min, None),
+                frame_length_ms=frame_length_ms,
+                hop_length_ms=hop_length_ms
+            )
+            
+            local_onsets = detect_onsets_from_envelope(
+                env_rms, times_rms,
+                diff_threshold_std=2.0,
+                min_interval_ms=5.0
+            )
+            
+            if len(local_onsets) > 0:
+                t_burst_onset_time = t_min_time + local_onsets[0]
+            else:
+                # Fallback: use 10% threshold crossing before peak
+                threshold = 0.1 * env[peak_idx_local]
+                onset_idx = peak_idx_local
+                for j in range(peak_idx_local - 1, -1, -1):
+                    if env[j] < threshold:
+                        onset_idx = j + 1
+                        break
+                t_burst_onset_time = t_min_time + onset_idx / sr
+        else:
+            # Fallback to interval start
+            t_peak_time = t_min_time
+            t_burst_onset_time = t_min_time
+        
+        # === A-onset detection: Use MFA phoneme boundary ===
+        # Look for the immediately following vowel interval
+        a_onset_time = None
+        vowel_label = None
+        vowel_start = None
+        vowel_end = None
+        
+        # Search for vowel in subsequent intervals
+        for j in range(i + 1, len(intervals)):
+            next_interval = intervals[j]
+            next_label = next_interval.mark
+            
+            # Check if this is a vowel
+            if next_label in vowel_labels:
+                a_onset_time = next_interval.minTime
+                vowel_label = next_label
+                vowel_start = next_interval.minTime
+                vowel_end = next_interval.maxTime
+                break
+            
+            # If we find another consonant or a significant gap, stop searching
+            if next_label and next_label not in ['', ' ']:
+                # Allow looking past certain intermediate sounds (aspiration, etc.)
+                # but stop if we see another consonant
+                if next_label not in vowel_labels:
+                    # Check for aspiration or similar transition sounds
+                    if next_interval.minTime - t_max_time > 0.1:
+                        # Gap too large, use fallback
+                        break
+        
+        # Fallback: if no vowel found, use end of T interval as A-onset
+        if a_onset_time is None:
+            a_onset_time = t_max_time
+            vowel_label = 'unknown'
+            vowel_start = t_max_time
+            vowel_end = t_max_time
+        
+        # Store results
+        t_peak_times.append(t_peak_time)
+        a_onset_times.append(a_onset_time)
+        t_burst_onset_times.append(t_burst_onset_time)
+        
+        ta_details.append({
+            't_burst_onset_sec': t_burst_onset_time,
+            't_peak_sec': t_peak_time,
+            'a_onset_sec': a_onset_time,
+            't_interval_start': t_min_time,
+            't_interval_end': t_max_time,
+            'vowel_label': vowel_label,
+            'vowel_interval_start': vowel_start,
+            'vowel_interval_end': vowel_end,
+            'detection_method': 'mfa_phoneme'
+        })
+    
+    return (
+        np.array(t_peak_times),
+        np.array(a_onset_times),
+        np.array(t_burst_onset_times),
+        ta_details
+    )
+
+
+def plot_mfa_ta_detection_results(
+    wav_path: str,
+    tg_path: str,
+    t_peak_times: np.ndarray,
+    a_onset_times: np.ndarray,
+    t_burst_onset_times: np.ndarray,
+    ta_details: list[dict],
+    *,
+    tier_name: str = "phones",
+    title: str = "",
+    show_phoneme_boundaries: bool = True,
+) -> None:
+    """
+    Plot MFA-based TA detection results with phoneme boundaries visualization.
+    
+    Creates a three-panel plot showing:
+    - Panel 1: Waveform with T-peak (red), A-onset (blue), and T-burst onset (green) markers
+    - Panel 2: Hilbert envelope with markers
+    - Panel 3: MFA phoneme tier visualization
+    
+    Args:
+        wav_path: Path to WAV file.
+        tg_path: Path to MFA TextGrid file.
+        t_peak_times: Array of T-peak times (from detect_ta_onsets_from_mfa_phonemes).
+        a_onset_times: Array of A-onset times.
+        t_burst_onset_times: Array of T-burst onset times.
+        ta_details: List of detection detail dicts.
+        tier_name: Name of the phone tier in TextGrid.
+        title: Optional plot title.
+        show_phoneme_boundaries: If True, show all phoneme boundaries in panel 3.
+    """
+    # Load audio
+    y, sr = librosa.load(wav_path, sr=None, mono=True)
+    time_axis = np.arange(len(y)) / sr
+    
+    # Load TextGrid for phoneme visualization
+    tg = TextGrid.fromFile(tg_path)
+    tier = None
+    for t in tg.tiers:
+        if t.name == tier_name:
+            tier = t
+            break
+    
+    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+    
+    # Panel 1: Waveform
+    ax1 = axes[0]
+    ax1.plot(time_axis, y, alpha=0.6, linewidth=0.5, color='gray', label='Waveform')
+    ax1.set_ylabel('Amplitude')
+    ax1.set_title(title if title else f'MFA-based TA Detection: {wav_path}')
+    ax1.grid(True, alpha=0.3)
+    
+    # Mark T-burst onsets (green dashed)
+    for i, t_time in enumerate(t_burst_onset_times):
+        ax1.axvline(x=t_time, color='green', linestyle='--', alpha=0.7, linewidth=1.2,
+                   label='T burst onset' if i == 0 else None)
+    
+    # Mark T-peaks (red solid)
+    for i, t_time in enumerate(t_peak_times):
+        ax1.axvline(x=t_time, color='red', linestyle='-', alpha=0.8, linewidth=1.5,
+                   label='T peak (burst explosion)' if i == 0 else None)
+    
+    # Mark A-onsets (blue solid)
+    for i, a_time in enumerate(a_onset_times):
+        ax1.axvline(x=a_time, color='blue', linestyle='-', alpha=0.8, linewidth=1.5,
+                   label='A onset (MFA vowel start)' if i == 0 else None)
+    
+    ax1.legend(loc='upper right')
+    
+    # Panel 2: Hilbert envelope
+    ax2 = axes[1]
+    env = compute_hilbert_envelope(y, sr)
+    ax2.plot(time_axis, env, color='orange', linewidth=1.0, label='Hilbert envelope')
+    ax2.set_ylabel('Envelope')
+    ax2.grid(True, alpha=0.3)
+    
+    # Mark on envelope
+    for t_time in t_burst_onset_times:
+        ax2.axvline(x=t_time, color='green', linestyle='--', alpha=0.7, linewidth=1.2)
+    for t_time in t_peak_times:
+        ax2.axvline(x=t_time, color='red', linestyle='-', alpha=0.8, linewidth=1.5)
+    for a_time in a_onset_times:
+        ax2.axvline(x=a_time, color='blue', linestyle='-', alpha=0.8, linewidth=1.5)
+    
+    ax2.legend(loc='upper right')
+    
+    # Panel 3: MFA phoneme tier
+    ax3 = axes[2]
+    ax3.set_ylabel('Phoneme')
+    ax3.set_xlabel('Time (s)')
+    ax3.set_ylim(0, 1)
+    ax3.set_yticks([])
+    
+    if tier is not None and show_phoneme_boundaries:
+        for interval in tier:
+            if interval.mark:  # Only show non-empty labels
+                # Draw interval rectangle
+                rect_start = interval.minTime
+                rect_width = interval.maxTime - interval.minTime
+                
+                # Color based on phoneme type
+                if interval.mark in VOWEL_PHONEMES:
+                    color = 'lightblue'
+                elif interval.mark in ['t', 'T']:
+                    color = 'lightcoral'
+                else:
+                    color = 'lightgray'
+                
+                rect = plt.Rectangle((rect_start, 0.1), rect_width, 0.8,
+                                     facecolor=color, edgecolor='black',
+                                     linewidth=0.5, alpha=0.7)
+                ax3.add_patch(rect)
+                
+                # Add label text
+                mid_time = (interval.minTime + interval.maxTime) / 2
+                ax3.text(mid_time, 0.5, interval.mark,
+                        ha='center', va='center', fontsize=10, fontweight='bold')
+    
+    # Add transition annotations
+    for detail in ta_details:
+        t_peak = detail['t_peak_sec']
+        a_onset = detail['a_onset_sec']
+        transition_ms = (a_onset - t_peak) * 1000
+        
+        # Add annotation line connecting T-peak to A-onset
+        ax3.annotate('',
+                    xy=(a_onset, 0.5), xytext=(t_peak, 0.5),
+                    arrowprops=dict(arrowstyle='->', color='purple', lw=1.5))
+        
+        mid_point = (t_peak + a_onset) / 2
+        ax3.text(mid_point, 0.85, f'{transition_ms:.1f}ms',
+                ha='center', va='bottom', fontsize=8, color='purple',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    ax3.grid(True, alpha=0.3, axis='x')
+    
+    plt.tight_layout()
+    plt.show()
 
 
 def detect_voicing_onset(
