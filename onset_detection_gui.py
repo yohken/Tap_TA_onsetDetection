@@ -386,6 +386,7 @@ def plot_voice_segments_interactive(
     Displays:
     - Amplitude waveform with segment markers
     - RMS envelope with feature point markers
+    - Optional spectrogram overlay (PRAAT-style, toggle with button)
     
     Feature points are color-coded:
     - t_start (segment start): Green solid line
@@ -408,6 +409,9 @@ def plot_voice_segments_interactive(
     env = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
     times = librosa.frames_to_time(np.arange(len(env)), sr=sr, hop_length=hop_length)
     
+    # Compute spectrogram for overlay
+    S_db, spec_times, spec_freqs = onset_hilbert.compute_spectrogram(y, sr)
+    
     # Create figure
     fig = plt.figure(figsize=(14, 8))
     
@@ -415,9 +419,18 @@ def plot_voice_segments_interactive(
     ax1 = plt.subplot2grid((4, 1), (0, 0), rowspan=2)
     ax2 = plt.subplot2grid((4, 1), (2, 0), rowspan=2, sharex=ax1)
     
+    # Create a secondary y-axis for frequency display (for spectrogram)
+    ax1_spec = ax1.twinx()
+    ax1_spec.set_ylabel('Frequency (Hz)')
+    ax1_spec.set_ylim(spec_freqs[0], spec_freqs[-1])
+    ax1_spec.set_visible(False)  # Initially hidden
+    
+    # State for spectrogram visibility
+    spectrogram_state = {'visible': False, 'image': None}
+    
     # Plot waveform
     time_axis = np.arange(len(y)) / sr
-    ax1.plot(time_axis, y, alpha=0.5, linewidth=0.5, color='blue', label='Waveform')
+    waveform_line, = ax1.plot(time_axis, y, alpha=0.5, linewidth=0.5, color='blue', label='Waveform')
     ax1.set_ylabel('Amplitude')
     ax1.set_title(title if title else f'Voice Segment Detection - {os.path.basename(wav_path)}')
     ax1.grid(True, alpha=0.3)
@@ -502,7 +515,7 @@ def plot_voice_segments_interactive(
     plt.subplots_adjust(bottom=0.18)
     
     # Threshold slider
-    ax_slider = plt.axes([0.15, 0.10, 0.50, 0.03])
+    ax_slider = plt.axes([0.15, 0.10, 0.40, 0.03])
     slider_threshold = Slider(
         ax_slider,
         'Threshold (%)',
@@ -513,8 +526,48 @@ def plot_voice_segments_interactive(
     )
     
     # Re-detect button
-    ax_button = plt.axes([0.70, 0.10, 0.12, 0.04])
+    ax_button = plt.axes([0.60, 0.10, 0.12, 0.04])
     button_redetect = Button(ax_button, 'Re-detect')
+    
+    # Spectrogram toggle button
+    ax_spectrogram = plt.axes([0.74, 0.10, 0.12, 0.04])
+    button_spectrogram = Button(ax_spectrogram, 'Spectrogram')
+    
+    def toggle_spectrogram(event):
+        """Toggle spectrogram overlay visibility."""
+        if spectrogram_state['visible']:
+            # Hide spectrogram
+            if spectrogram_state['image'] is not None:
+                spectrogram_state['image'].remove()
+                spectrogram_state['image'] = None
+            ax1_spec.set_visible(False)
+            waveform_line.set_alpha(0.5)
+            spectrogram_state['visible'] = False
+            button_spectrogram.label.set_text('Spectrogram')
+        else:
+            # Show spectrogram
+            extent = [spec_times[0], spec_times[-1], spec_freqs[0], spec_freqs[-1]]
+            
+            # Display spectrogram on ax1 using imshow with transparency
+            spectrogram_state['image'] = ax1.imshow(
+                S_db,
+                aspect='auto',
+                origin='lower',
+                extent=extent,
+                cmap='magma',
+                alpha=0.6,
+                interpolation='bilinear',
+                zorder=0  # Put behind the waveform
+            )
+            ax1_spec.set_visible(True)
+            ax1_spec.set_ylim(spec_freqs[0], spec_freqs[-1])
+            waveform_line.set_alpha(0.8)  # Make waveform more visible
+            spectrogram_state['visible'] = True
+            button_spectrogram.label.set_text('Hide Spec')
+        
+        fig.canvas.draw_idle()
+    
+    button_spectrogram.on_clicked(toggle_spectrogram)
     
     # Current state
     state = {
