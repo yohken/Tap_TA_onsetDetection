@@ -594,6 +594,10 @@ class MFAOnsetPipeline:
                             ax4.axvline(x=onset_t, color='red', linestyle='--', alpha=0.7, linewidth=1.2)
                         for onset_t in hilbert_result.onset_times:
                             ax4.axvline(x=onset_t, color='blue', linestyle='--', alpha=0.7, linewidth=1.2)
+                        
+                        # Explicitly set x-axis limits to ensure phoneme rectangles are visible
+                        # This is required because add_patch() doesn't trigger autoscaling
+                        ax4.set_xlim(time_axis[0], time_axis[-1])
                     else:
                         ax4.text(0.5, 0.5, f'Tier "{self.mfa_params.tier_name}" not found in TextGrid',
                                 transform=ax4.transAxes, ha='center', va='center')
