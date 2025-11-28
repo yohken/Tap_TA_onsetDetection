@@ -159,14 +159,12 @@ def save_ta_features_csv_with_retry(
             return (True, current_path)
         except OSError as e:
             # Create a root window if none provided
-            root = None
+            created_root = None
             try:
                 if parent_window is None:
-                    root = tk.Tk()
-                    root.withdraw()
-                    root.attributes('-topmost', True)
-                else:
-                    root = parent_window
+                    created_root = tk.Tk()
+                    created_root.withdraw()
+                    created_root.attributes('-topmost', True)
                 
                 # Inform user of the error
                 error_message = (
@@ -204,8 +202,8 @@ def save_ta_features_csv_with_retry(
                 current_path = new_path
             finally:
                 # Clean up root window if we created it
-                if parent_window is None and root is not None:
-                    root.destroy()
+                if created_root is not None:
+                    created_root.destroy()
 
 
 def detect_voice_segments(
