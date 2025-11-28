@@ -607,9 +607,11 @@ def detect_voicing_onset(
     hop_length = int(hop_length_ms * sr / 1000)
     
     # Ensure fmin is valid for the given frame_length and sr
-    # fmin must be >= sr / frame_length
+    # fmin must be >= sr / frame_length for librosa.pyin to work correctly
+    # Add 1 Hz safety margin to avoid edge cases
     min_valid_fmin = sr / frame_length
-    actual_fmin = max(fmin, min_valid_fmin + 1.0)  # Add small margin for safety
+    FMIN_SAFETY_MARGIN_HZ = 1.0
+    actual_fmin = max(fmin, min_valid_fmin + FMIN_SAFETY_MARGIN_HZ)
     
     # Use pyin for pitch tracking with voicing detection
     # pyin returns (f0, voiced_flag, voiced_probs)
@@ -804,6 +806,7 @@ def detect_ta_onsets_with_voicing(
     fmax: float = 500.0,
     voicing_frame_length_ms: float = 25.0,
     voicing_hop_length_ms: float = 5.0,
+    peak_search_window_ms: float = 50.0,
 ) -> tuple[np.ndarray, np.ndarray, list[dict]]:
     """
     Detect T burst onsets and A (vowel) onsets using voicing detection.
@@ -832,6 +835,7 @@ def detect_ta_onsets_with_voicing(
         fmax: maximum F0 for voicing detection.
         voicing_frame_length_ms: frame length for pyin.
         voicing_hop_length_ms: hop size for pyin.
+        peak_search_window_ms: window size for searching T peak after burst (default 50ms).
     
     Returns:
         t_onset_times: 1D array of T burst onset times (seconds).
@@ -907,9 +911,9 @@ def detect_ta_onsets_with_voicing(
             # Compute Hilbert envelope for peak detection
             env_full = compute_hilbert_envelope(y, sr, band=(high_freq_min, None))
             
-            # Find peak in a window after T burst onset (within 50ms typically)
-            peak_search_window = int(0.05 * sr)  # 50ms window
-            peak_search_end = min(len(env_full), t_burst_onset_sample + peak_search_window)
+            # Find peak in a window after T burst onset (configurable window size)
+            peak_search_samples = int(peak_search_window_ms * sr / 1000.0)
+            peak_search_end = min(len(env_full), t_burst_onset_sample + peak_search_samples)
             
             if t_burst_onset_sample < len(env_full):
                 env_window = env_full[t_burst_onset_sample:peak_search_end]

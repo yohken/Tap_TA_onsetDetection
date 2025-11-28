@@ -224,8 +224,11 @@ class TestFindTaTransition(unittest.TestCase):
             max_transition_sec=max_transition
         )
         
-        # Should be corrected
-        self.assertTrue(result['corrected'] or result['detection_method'].endswith('_corrected'))
+        # Should be corrected - check the corrected flag directly
+        self.assertTrue(
+            result['corrected'],
+            f"Expected correction for short max_transition, got method={result['detection_method']}"
+        )
         
         # Transition should be close to max_transition
         self.assertAlmostEqual(result['transition_sec'], max_transition, delta=0.005)
