@@ -300,7 +300,10 @@ Visualization helper for debugging onset detection.
 - **HPF Frequency Slider**: Adjust High-Pass Filter cutoff frequency (100-2000 Hz) after initial detection
 - **Re-detect Button**: Recompute onset detection with new HPF frequency without restarting
 - **Marker Deletion**: Cmd+Shift+Click (Mac) or Ctrl+Shift+Click (Windows/Linux) to delete false positive markers
-- **Export Button**: Save onset/peak data to CSV via file dialog
+- **Export Buttons**:
+  - **CSV書き出し**: Save onset/peak data to CSV via file dialog
+  - **画像書き出し**: Save current plot as PNG/PDF/SVG image
+  - **データ書き出し（再現用）**: Export detection data and parameters as JSON for reproducibility
 - **Next Button**: Navigate to next file in batch or open new file dialog
 - **Onset Count Display**: Real-time display of number of detected onsets
 - **X-axis Zoom**: Use mouse wheel (or trackpad pinch) to zoom in/out on the time axis

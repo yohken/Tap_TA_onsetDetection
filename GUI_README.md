@@ -78,11 +78,18 @@ When a plot window opens, you have access to the following interactive features:
 - **Precise Selection**: Click within 50ms of a marker to delete it
 - **Paired Deletion**: Deleting an onset also deletes its corresponding peak, and vice versa
 
-### Data Export (New!)
-- **Export Button**: Click the "Export" button to save the current onset and peak data
-- **CSV Format**: Data is saved as a CSV file with columns: index, onset_sec, peak_sec, label
-- **File Dialog**: Choose the save location and filename through a file dialog
-- **Git Integration**: The CSV includes metadata for reproducibility
+### Data Export (Enhanced!)
+- **CSV書き出し (CSV Export)**: Click to save onset and peak data as CSV
+  - CSV format with columns: index, onset_sec, peak_sec, label
+  - Choose save location through file dialog
+- **画像書き出し (Image Export)**: Click to save the current plot as an image
+  - Supports PNG, PDF, and SVG formats
+  - High-quality 150 DPI output
+- **データ書き出し (Data Export for Reproducibility)**: Click to save all detection data and parameters as JSON
+  - Includes source file information and sample rate
+  - Contains all detection parameters (HPF cutoff, threshold, etc.)
+  - Records onset/peak times and detection count
+  - Includes export timestamp for tracking
 
 ### Zoom and Navigation
 - **Zoom In/Out**: Scroll the mouse wheel UP (or pinch OUT on trackpad) to zoom in, DOWN (or pinch IN) to zoom out
