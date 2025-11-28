@@ -1353,24 +1353,37 @@ def plot_ta_detection_results(
     a_onset_times: np.ndarray,
     ta_details: list[dict],
     *,
+    tg_path: Optional[str] = None,
+    tier_name: str = "phones",
     title: str = "",
     show_voicing: bool = False,
+    show_phoneme_boundaries: bool = True,
 ) -> None:
     """
     Plot TA detection results with T burst onsets and A vowel onsets.
+    
+    Creates a two-panel plot (without TextGrid) or three-panel plot (with TextGrid):
+    - Panel 1: Waveform with T onset and A onset markers
+    - Panel 2: Hilbert envelope with markers and transition annotations
+    - Panel 3 (optional): MFA phoneme tier visualization if tg_path is provided
     
     Args:
         wav_path: path to WAV file.
         t_onset_times: array of T burst onset times.
         a_onset_times: array of A vowel onset times.
         ta_details: list of detection detail dicts.
+        tg_path: optional path to MFA TextGrid file for phoneme visualization.
+        tier_name: name of the phone tier in TextGrid (default: "phones").
         title: optional plot title.
         show_voicing: if True, show voicing detection info (requires ta_details with voicing_info).
+        show_phoneme_boundaries: if True and tg_path provided, show phoneme boundaries.
     """
     y, sr = librosa.load(wav_path, sr=None, mono=True)
     time_axis = np.arange(len(y)) / sr
     
-    fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+    # Determine number of subplots based on TextGrid availability
+    n_panels = 3 if (tg_path and show_phoneme_boundaries) else 2
+    fig, axes = plt.subplots(n_panels, 1, figsize=(14, 4 * n_panels), sharex=True)
     
     # Plot waveform
     ax1 = axes[0]
@@ -1395,7 +1408,6 @@ def plot_ta_detection_results(
     ax2 = axes[1]
     env = compute_hilbert_envelope(y, sr)
     ax2.plot(time_axis, env, color='orange', linewidth=1.0, label='Hilbert envelope')
-    ax2.set_xlabel('Time (s)')
     ax2.set_ylabel('Envelope')
     ax2.grid(True, alpha=0.3)
     
@@ -1420,6 +1432,64 @@ def plot_ta_detection_results(
             )
     
     ax2.legend(loc='upper right')
+    
+    # Panel 3: MFA phoneme tier (if TextGrid provided)
+    if n_panels == 3 and tg_path:
+        ax3 = axes[2]
+        ax3.set_ylabel('Phoneme')
+        ax3.set_xlabel('Time (s)')
+        ax3.set_ylim(0, 1)
+        ax3.set_yticks([])
+        
+        try:
+            tg = TextGrid.fromFile(tg_path)
+            tier = None
+            for t in tg.tiers:
+                if t.name == tier_name:
+                    tier = t
+                    break
+            
+            if tier is not None:
+                for interval in tier:
+                    if interval.mark:  # Only show non-empty labels
+                        # Draw interval rectangle
+                        rect_start = interval.minTime
+                        rect_width = interval.maxTime - interval.minTime
+                        
+                        # Color based on phoneme type
+                        if interval.mark in VOWEL_PHONEMES:
+                            color = 'lightblue'
+                        elif interval.mark in ['t', 'T']:
+                            color = 'lightcoral'
+                        else:
+                            color = 'lightgray'
+                        
+                        rect = plt.Rectangle((rect_start, 0.1), rect_width, 0.8,
+                                             facecolor=color, edgecolor='black',
+                                             linewidth=0.5, alpha=0.7)
+                        ax3.add_patch(rect)
+                        
+                        # Add label text
+                        mid_time = (interval.minTime + interval.maxTime) / 2
+                        ax3.text(mid_time, 0.5, interval.mark,
+                                ha='center', va='center', fontsize=10, fontweight='bold')
+                
+                # Add T onset and A onset markers on phoneme tier
+                for t_time in t_onset_times:
+                    ax3.axvline(x=t_time, color='red', linestyle='--', alpha=0.7, linewidth=1.2)
+                for a_time in a_onset_times:
+                    ax3.axvline(x=a_time, color='blue', linestyle='-', alpha=0.7, linewidth=1.2)
+            else:
+                ax3.text(0.5, 0.5, f'Tier "{tier_name}" not found in TextGrid',
+                        transform=ax3.transAxes, ha='center', va='center')
+        except Exception as e:
+            ax3.text(0.5, 0.5, f'Error loading TextGrid: {e}',
+                    transform=ax3.transAxes, ha='center', va='center')
+        
+        ax3.grid(True, alpha=0.3, axis='x')
+    else:
+        # Set xlabel on the last axis when no phoneme panel
+        ax2.set_xlabel('Time (s)')
     
     plt.tight_layout()
     plt.show()
