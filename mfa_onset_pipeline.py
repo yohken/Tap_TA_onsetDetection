@@ -35,9 +35,11 @@ from typing import Optional
 
 import librosa
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 import soundfile as sf
+from textgrid import TextGrid
 
 import onset_detection
 import onset_hilbert
@@ -430,11 +432,17 @@ class MFAOnsetPipeline:
         """
         Create comparison plot showing both MFA and Hilbert results.
         
+        Creates a four-panel plot when TextGrid is available:
+        - Panel 1: Waveform with both onset markers
+        - Panel 2: MFA high-frequency RMS envelope
+        - Panel 3: Hilbert envelope
+        - Panel 4: MFA phoneme tier visualization (if TextGrid available)
+        
         Args:
             wav_path: Path to WAV file
             mfa_result: MFA detection results
             hilbert_result: Hilbert detection results
-            textgrid_path: Optional path to TextGrid (for computing MFA envelope)
+            textgrid_path: Optional path to TextGrid (for phoneme visualization)
         
         Returns:
             Path to saved PNG file, or None if failed
@@ -444,8 +452,14 @@ class MFAOnsetPipeline:
             y, sr = librosa.load(str(wav_path), sr=None, mono=True)
             time_axis = np.arange(len(y)) / sr
             
-            # Create figure with 3 subplots
-            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+            # Determine if we should show phoneme panel
+            show_phoneme_panel = textgrid_path and textgrid_path.exists()
+            n_panels = 4 if show_phoneme_panel else 3
+            
+            # Create figure with subplots
+            fig, axes = plt.subplots(n_panels, 1, figsize=(14, 3 * n_panels), sharex=True)
+            ax1, ax2, ax3 = axes[0], axes[1], axes[2]
+            ax4 = axes[3] if show_phoneme_panel else None
             
             # Plot 1: Waveform with both onset markers
             ax1.plot(time_axis, y, alpha=0.6, linewidth=0.5, color='gray', label='Waveform')
@@ -531,10 +545,66 @@ class MFAOnsetPipeline:
                 for peak_t in hilbert_result.peak_times:
                     ax3.axvline(x=peak_t, color='green', linestyle=':', alpha=0.5, linewidth=1.0)
             
-            ax3.set_xlabel('Time (s)')
             ax3.set_ylabel('Hilbert Amplitude')
             ax3.legend(loc='upper right')
             ax3.grid(True, alpha=0.3)
+            
+            # Plot 4: MFA phoneme tier (if TextGrid available)
+            if show_phoneme_panel and ax4 is not None:
+                ax4.set_ylabel('Phoneme')
+                ax4.set_xlabel('Time (s)')
+                ax4.set_ylim(0, 1)
+                ax4.set_yticks([])
+                
+                try:
+                    tg = TextGrid.fromFile(str(textgrid_path))
+                    tier = None
+                    for t in tg.tiers:
+                        if t.name == self.mfa_params.tier_name:
+                            tier = t
+                            break
+                    
+                    if tier is not None:
+                        for interval in tier:
+                            if interval.mark:  # Only show non-empty labels
+                                # Draw interval rectangle
+                                rect_start = interval.minTime
+                                rect_width = interval.maxTime - interval.minTime
+                                
+                                # Color based on phoneme type
+                                if interval.mark in onset_detection.VOWEL_PHONEMES:
+                                    color = 'lightblue'
+                                elif interval.mark.lower() == 't':
+                                    color = 'lightcoral'
+                                else:
+                                    color = 'lightgray'
+                                
+                                rect = Rectangle((rect_start, 0.1), rect_width, 0.8,
+                                                facecolor=color, edgecolor='black',
+                                                linewidth=0.5, alpha=0.7)
+                                ax4.add_patch(rect)
+                                
+                                # Add label text
+                                mid_time = (interval.minTime + interval.maxTime) / 2
+                                ax4.text(mid_time, 0.5, interval.mark,
+                                        ha='center', va='center', fontsize=10, fontweight='bold')
+                        
+                        # Add onset markers on phoneme tier
+                        for onset_t in mfa_result.onset_times:
+                            ax4.axvline(x=onset_t, color='red', linestyle='--', alpha=0.7, linewidth=1.2)
+                        for onset_t in hilbert_result.onset_times:
+                            ax4.axvline(x=onset_t, color='blue', linestyle='--', alpha=0.7, linewidth=1.2)
+                    else:
+                        ax4.text(0.5, 0.5, f'Tier "{self.mfa_params.tier_name}" not found in TextGrid',
+                                transform=ax4.transAxes, ha='center', va='center')
+                except Exception as e:
+                    ax4.text(0.5, 0.5, f'Error loading TextGrid: {e}',
+                            transform=ax4.transAxes, ha='center', va='center')
+                
+                ax4.grid(True, alpha=0.3, axis='x')
+            else:
+                # Set xlabel on ax3 when no phoneme panel
+                ax3.set_xlabel('Time (s)')
             
             plt.tight_layout()
             
