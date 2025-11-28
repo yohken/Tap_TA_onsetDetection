@@ -35,6 +35,7 @@ import onset_hilbert
 import os
 import numpy as np
 import scipy.signal
+import pandas as pd
 
 # Configure matplotlib backend for GUI
 # TkAgg will be used automatically when available
@@ -80,6 +81,129 @@ CONSONANT_SEARCH_FRACTION = 0.33  # Search first 1/3 of segment
 FEATURE_POINT_OFFSET_SEC = 0.01  # 10ms offset
 
 # ==============================================================================
+
+
+def save_ta_features_csv(
+    out_path: str,
+    features_list: list[dict[str, float]],
+) -> None:
+    """
+    Save detected TA feature points to a CSV file.
+
+    Columns:
+        index: integer index (0, 1, 2, ...)
+        t_start: t_start times [s]
+        t_peak: t_peak times [s]
+        a_start: a_start times [s]
+        a_stable: a_stable times [s]
+        end: end times [s]
+
+    Args:
+        out_path: path to CSV file.
+        features_list: list of feature dictionaries.
+    
+    Raises:
+        OSError: If the file cannot be written (permission denied, disk full, etc.).
+    """
+    # Build DataFrame
+    data_dict = {
+        'index': [],
+        't_start': [],
+        't_peak': [],
+        'a_start': [],
+        'a_stable': [],
+        'end': [],
+    }
+    
+    for i, features in enumerate(features_list):
+        data_dict['index'].append(i)
+        data_dict['t_start'].append(features.get('t_start', np.nan))
+        data_dict['t_peak'].append(features.get('t_peak', np.nan))
+        data_dict['a_start'].append(features.get('a_start', np.nan))
+        data_dict['a_stable'].append(features.get('a_stable', np.nan))
+        data_dict['end'].append(features.get('end', np.nan))
+    
+    df = pd.DataFrame(data_dict)
+    
+    # Save to CSV
+    df.to_csv(out_path, index=False)
+
+
+def save_ta_features_csv_with_retry(
+    out_path: str,
+    features_list: list[dict[str, float]],
+    *,
+    parent_window: object | None = None,
+) -> tuple[bool, str | None]:
+    """
+    Save TA feature points to a CSV file with error handling and retry.
+    
+    If a file I/O error occurs (permission denied, disk full, etc.), the user is
+    informed of the error and prompted to select a new save location.
+    
+    Args:
+        out_path: initial path to CSV file.
+        features_list: list of feature dictionaries.
+        parent_window: optional parent tkinter window for dialogs.
+    
+    Returns:
+        Tuple of (success, actual_path):
+            - success: True if file was saved successfully, False if cancelled.
+            - actual_path: The path where file was saved, or None if cancelled.
+    """
+    current_path = out_path
+    
+    while True:
+        try:
+            save_ta_features_csv(current_path, features_list)
+            return (True, current_path)
+        except OSError as e:
+            # Create a root window if none provided
+            created_root = None
+            try:
+                if parent_window is None:
+                    created_root = tk.Tk()
+                    created_root.withdraw()
+                    created_root.attributes('-topmost', True)
+                
+                # Inform user of the error
+                error_message = (
+                    f"ファイルの書き込みに失敗しました。\n\n"
+                    f"エラー: {str(e)}\n"
+                    f"パス: {current_path}\n\n"
+                    f"別の保存場所を選択しますか？"
+                )
+                
+                retry = messagebox.askyesno(
+                    "ファイル書き込みエラー",
+                    error_message,
+                    icon='warning'
+                )
+                
+                if not retry:
+                    # User chose not to retry
+                    return (False, None)
+                
+                # Get default filename from current path
+                default_name = os.path.basename(current_path)
+                
+                # Show save file dialog for new location
+                new_path = filedialog.asksaveasfilename(
+                    title="新しい保存場所を選択",
+                    defaultextension=".csv",
+                    initialfile=default_name,
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+                )
+                
+                if not new_path:
+                    # User cancelled the dialog
+                    return (False, None)
+                
+                current_path = new_path
+            finally:
+                # Clean up root window if we created it
+                if created_root is not None:
+                    created_root.destroy()
 
 
 def detect_voice_segments(
@@ -514,8 +638,8 @@ def plot_voice_segments_interactive(
     # Add sliders
     plt.subplots_adjust(bottom=0.18)
     
-    # Threshold slider
-    ax_slider = plt.axes([0.15, 0.10, 0.40, 0.03])
+    # Threshold slider (shortened to make room for buttons)
+    ax_slider = plt.axes([0.15, 0.10, 0.30, 0.03])
     slider_threshold = Slider(
         ax_slider,
         'Threshold (%)',
@@ -525,13 +649,24 @@ def plot_voice_segments_interactive(
         valstep=0.5
     )
     
+    # Button layout - position buttons in a row
+    button_width = 0.10
+    button_height = 0.04
+    button_y = 0.10
+    button_start_x = 0.50
+    button_spacing = 0.02
+    
     # Re-detect button
-    ax_button = plt.axes([0.60, 0.10, 0.12, 0.04])
+    ax_button = plt.axes([button_start_x, button_y, button_width, button_height])
     button_redetect = Button(ax_button, 'Re-detect')
     
     # Spectrogram toggle button
-    ax_spectrogram = plt.axes([0.74, 0.10, 0.12, 0.04])
+    ax_spectrogram = plt.axes([button_start_x + button_width + button_spacing, button_y, button_width, button_height])
     button_spectrogram = Button(ax_spectrogram, 'Spectrogram')
+    
+    # Export button
+    ax_export = plt.axes([button_start_x + 2 * (button_width + button_spacing), button_y, button_width, button_height])
+    button_export = Button(ax_export, 'Export')
     
     def toggle_spectrogram(event):
         """Toggle spectrogram overlay visibility."""
@@ -603,6 +738,39 @@ def plot_voice_segments_interactive(
         fig.canvas.draw_idle()
     
     button_redetect.on_clicked(on_redetect)
+    
+    def on_export(event):
+        """Handle export button click."""
+        # Create a hidden tkinter root window for file dialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        
+        # Get default filename
+        default_name = os.path.splitext(os.path.basename(wav_path))[0] + '_ta_features.csv'
+        
+        # Show save file dialog
+        file_path = filedialog.asksaveasfilename(
+            title="Export TA Feature Points",
+            defaultextension=".csv",
+            initialfile=default_name,
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            # Save data with error handling and retry
+            success, actual_path = save_ta_features_csv_with_retry(
+                file_path,
+                state['features_list']
+            )
+            if success:
+                print(f"TA features exported to: {actual_path}")
+            else:
+                print("Export cancelled.")
+    
+    button_export.on_clicked(on_export)
     
     # Add zoom functionality
     def on_scroll(event):
