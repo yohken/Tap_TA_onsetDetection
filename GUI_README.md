@@ -8,10 +8,9 @@ A graphical user interface for the onset detection module.
 - **Automatic Plotting**: Results are automatically visualized using matplotlib
 - **Interactive HPF Control**: Adjust High-Pass Filter frequency after initial detection with a slider and re-detect button
 - **Interactive Plot Zoom**: Use mouse wheel to zoom in/out on the time axis for detailed analysis
-- **Automatic MFA TextGrid Generation**: For /t/ burst detection, TextGrid files are automatically generated using Montreal Forced Aligner (MFA)
 - **Two Detection Methods**:
   1. Tap Onset Detection - Select a WAV file to detect percussive taps
-  2. /t/ Burst Onset Detection - Select a WAV file to detect /t/ bursts (TextGrid automatically generated with MFA)
+  2. Voice Segment Detection - Detect voice segments (e.g., "ta" syllables) with feature point extraction
 
 ## Usage
 
@@ -31,26 +30,10 @@ python onset_detection_gui.py
 6. **Click the "Re-detect" button** to recompute onsets with the new frequency
 7. **Use mouse wheel to zoom in/out on the X-axis** for detailed inspection
 
-### /t/ Burst Onset Detection
-
-1. Click "Detect /t/ Burst Onsets"
-2. Select a WAV file containing speech with /t/ sounds
-3. The GUI will automatically:
-   - Run MFA (Montreal Forced Aligner) to generate a TextGrid file
-   - Detect /t/ burst onsets using the generated TextGrid
-4. View the results in the text area
-5. A plot window will open showing the detection results
-6. **Adjust the HPF frequency slider** (100-2000 Hz) to change the filter cutoff
-7. **Click the "Re-detect" button** to recompute onsets with the new frequency
-8. **Use mouse wheel to zoom in/out on the X-axis** for detailed inspection
-
-**Note**: MFA must be installed for /t/ burst detection to work. See [MFA installation guide](https://montreal-forced-aligner.readthedocs.io/).
-
 ## Requirements
 
 - Python 3.10+
 - tkinter (usually included with Python)
-- MFA (Montreal Forced Aligner) - required for /t/ burst detection
 - All dependencies from requirements.txt
 
 ## Screenshots

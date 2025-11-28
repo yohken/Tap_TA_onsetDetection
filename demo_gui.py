@@ -33,7 +33,7 @@ def main():
         print("\nGUI Features:")
         print("  • File selection dialogs for easy audio file selection")
         print("  • Automatic visualization of detection results")
-        print("  • Support for tap and /t/ burst detection")
+        print("  • Support for tap and voice segment detection")
         print("  • Click track generation with custom parameters")
         print("\nInstructions:")
         print("  1. Click a button to select a detection method")
