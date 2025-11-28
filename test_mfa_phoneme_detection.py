@@ -470,16 +470,17 @@ class TestIntegrationNewFunctions(unittest.TestCase):
             )
     
     def test_new_functions_have_docstrings(self):
-        """Test that new functions have documentation."""
+        """Test that new functions have documentation with required sections."""
         functions = [
             onset_detection.detect_ta_onsets_from_mfa_phonemes,
             onset_detection.plot_mfa_ta_detection_results,
         ]
         
         for func in functions:
-            self.assertIsNotNone(func.__doc__)
-            self.assertGreater(len(func.__doc__.strip()), 100,
-                             f"{func.__name__} has insufficient documentation")
+            self.assertIsNotNone(func.__doc__, f"{func.__name__} is missing docstring")
+            doc = func.__doc__
+            # Check for presence of Args section (all functions should have this)
+            self.assertIn('Args:', doc, f"{func.__name__} docstring missing Args section")
     
     def test_backward_compatibility(self):
         """Test that existing functions still work correctly."""

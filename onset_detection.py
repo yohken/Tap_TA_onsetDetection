@@ -572,22 +572,27 @@ def detect_t_burst_onsets_from_mfa(
 
 
 # Common vowel phoneme labels used by MFA (ARPABET notation)
+# Includes both uppercase ARPABET and lowercase variants used by some MFA models
 VOWEL_PHONEMES = {
-    # Monophthongs
+    # ARPABET monophthongs (uppercase - standard notation)
     'AA', 'AE', 'AH', 'AO', 'AW', 'AX', 'AY',
     'EH', 'ER', 'EY',
     'IH', 'IY',
     'OW', 'OY',
     'UH', 'UW',
-    # Japanese vowels (for Japanese MFA models)
+    # Japanese vowels (for Japanese MFA models - lowercase single letter)
     'a', 'i', 'u', 'e', 'o',
-    # Additional variants
+    # Lowercase ARPABET variants (used by some custom MFA models/dictionaries)
     'aa', 'ae', 'ah', 'ao', 'aw', 'ax', 'ay',
     'eh', 'er', 'ey',
     'ih', 'iy',
     'ow', 'oy',
     'uh', 'uw',
 }
+
+# Default parameters for T-burst detection
+DEFAULT_ENERGY_THRESHOLD_RATIO = 0.1  # 10% of peak for onset detection
+DEFAULT_MAX_CONSONANT_VOWEL_GAP_SEC = 0.1  # Maximum gap to search for following vowel
 
 
 def detect_ta_onsets_from_mfa_phonemes(
@@ -737,8 +742,8 @@ def detect_ta_onsets_from_mfa_phonemes(
             if len(local_onsets) > 0:
                 t_burst_onset_time = t_min_time + local_onsets[0]
             else:
-                # Fallback: use 10% threshold crossing before peak
-                threshold = 0.1 * env[peak_idx_local]
+                # Fallback: use threshold crossing before peak
+                threshold = DEFAULT_ENERGY_THRESHOLD_RATIO * env[peak_idx_local]
                 onset_idx = peak_idx_local
                 for j in range(peak_idx_local - 1, -1, -1):
                     if env[j] < threshold:
@@ -776,7 +781,7 @@ def detect_ta_onsets_from_mfa_phonemes(
                 # but stop if we see another consonant
                 if next_label not in vowel_labels:
                     # Check for aspiration or similar transition sounds
-                    if next_interval.minTime - t_max_time > 0.1:
+                    if next_interval.minTime - t_max_time > DEFAULT_MAX_CONSONANT_VOWEL_GAP_SEC:
                         # Gap too large, use fallback
                         break
         
