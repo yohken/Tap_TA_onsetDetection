@@ -433,11 +433,12 @@ class TestVoiceSegmentDetection(unittest.TestCase):
                 self.audio, self.sr, start, end
             )
             
-            # Feature points should be in order: t_start <= t_peak <= a_start <= a_stable <= end
+            # Feature points should be in order: t_start <= t_peak, t_start <= a_start <= a_stable <= end
+            # Note: a_start can be before t_peak as long as it's after t_start (T segment start)
             self.assertLessEqual(features['t_start'], features['t_peak'],
                                "t_start should be <= t_peak")
-            self.assertLessEqual(features['t_peak'], features['a_start'],
-                               "t_peak should be <= a_start")
+            self.assertLessEqual(features['t_start'], features['a_start'],
+                               "t_start should be <= a_start (a_start is valid if after T segment start)")
             self.assertLessEqual(features['a_start'], features['a_stable'],
                                "a_start should be <= a_stable")
             self.assertLessEqual(features['a_stable'], features['end'],

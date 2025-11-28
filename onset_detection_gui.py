@@ -188,6 +188,14 @@ def extract_feature_points(
     - a_stable: Point where vowel becomes stable
     - end: End of segment
     
+    Temporal ordering constraints:
+    - t_start <= t_peak (t_peak is always within T segment)
+    - t_start <= a_start (a_start is valid if after T segment start)
+    - a_start <= a_stable <= end
+    
+    Note: a_start can be before t_peak as long as it's after t_start.
+    This allows detection of A onset within the T segment boundary.
+    
     Args:
         y: Full audio signal.
         sr: Sampling rate in Hz.
@@ -276,9 +284,11 @@ def extract_feature_points(
     a_start_sample = segment_start + a_start_frame * hop_length
     a_start_sec = a_start_sample / sr
     
-    # Ensure a_start is after t_peak
-    if a_start_sec <= t_peak_sec:
-        a_start_sec = t_peak_sec + FEATURE_POINT_OFFSET_SEC  # Add small offset
+    # Ensure a_start is after t_start (T segment start)
+    # A start is valid as long as it's within the T segment (i.e., after t_start_sec)
+    # Even if a_start is before t_peak, it's accepted if it's after t_start
+    if a_start_sec <= t_start_sec:
+        a_start_sec = t_start_sec + FEATURE_POINT_OFFSET_SEC  # Add small offset
     
     # Feature point 4: a_stable (vowel stabilization)
     # Look for the point where RMS variance becomes low (stable vowel)
