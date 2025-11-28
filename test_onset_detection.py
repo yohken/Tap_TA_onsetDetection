@@ -313,7 +313,22 @@ class TestVoiceSegmentDetection(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        """Create synthetic test audio with two 'ta'-like sounds."""
+        """Create synthetic test audio with two 'ta'-like sounds and mock tkinter."""
+        # Mock tkinter for headless testing environment
+        import sys
+        import unittest.mock as mock
+        if 'tkinter' not in sys.modules:
+            sys.modules['tkinter'] = mock.MagicMock()
+            sys.modules['tkinter.filedialog'] = mock.MagicMock()
+            sys.modules['tkinter.messagebox'] = mock.MagicMock()
+            sys.modules['tkinter.ttk'] = mock.MagicMock()
+        
+        # Import and reload the module after mocking
+        import importlib
+        import onset_detection_gui
+        importlib.reload(onset_detection_gui)
+        cls.onset_detection_gui = onset_detection_gui
+        
         sr = 44100
         duration = 1.0
         t = np.linspace(0, duration, int(sr * duration))
@@ -359,20 +374,7 @@ class TestVoiceSegmentDetection(unittest.TestCase):
     
     def test_detect_voice_segments_count(self):
         """Test that correct number of voice segments are detected."""
-        # Import function with mock tkinter
-        import sys
-        import unittest.mock as mock
-        if 'tkinter' not in sys.modules:
-            sys.modules['tkinter'] = mock.MagicMock()
-            sys.modules['tkinter.filedialog'] = mock.MagicMock()
-            sys.modules['tkinter.messagebox'] = mock.MagicMock()
-            sys.modules['tkinter.ttk'] = mock.MagicMock()
-        
-        import importlib
-        import onset_detection_gui
-        importlib.reload(onset_detection_gui)
-        
-        segments = onset_detection_gui.detect_voice_segments(
+        segments = self.onset_detection_gui.detect_voice_segments(
             self.audio, self.sr,
             amplitude_threshold_ratio=0.05
         )
@@ -382,19 +384,7 @@ class TestVoiceSegmentDetection(unittest.TestCase):
     
     def test_detect_voice_segments_timing(self):
         """Test that detected segments are near expected times."""
-        import sys
-        import unittest.mock as mock
-        if 'tkinter' not in sys.modules:
-            sys.modules['tkinter'] = mock.MagicMock()
-            sys.modules['tkinter.filedialog'] = mock.MagicMock()
-            sys.modules['tkinter.messagebox'] = mock.MagicMock()
-            sys.modules['tkinter.ttk'] = mock.MagicMock()
-        
-        import importlib
-        import onset_detection_gui
-        importlib.reload(onset_detection_gui)
-        
-        segments = onset_detection_gui.detect_voice_segments(
+        segments = self.onset_detection_gui.detect_voice_segments(
             self.audio, self.sr,
             amplitude_threshold_ratio=0.05
         )
@@ -411,19 +401,7 @@ class TestVoiceSegmentDetection(unittest.TestCase):
     
     def test_extract_feature_points_structure(self):
         """Test that feature points have correct structure."""
-        import sys
-        import unittest.mock as mock
-        if 'tkinter' not in sys.modules:
-            sys.modules['tkinter'] = mock.MagicMock()
-            sys.modules['tkinter.filedialog'] = mock.MagicMock()
-            sys.modules['tkinter.messagebox'] = mock.MagicMock()
-            sys.modules['tkinter.ttk'] = mock.MagicMock()
-        
-        import importlib
-        import onset_detection_gui
-        importlib.reload(onset_detection_gui)
-        
-        segments = onset_detection_gui.detect_voice_segments(
+        segments = self.onset_detection_gui.detect_voice_segments(
             self.audio, self.sr,
             amplitude_threshold_ratio=0.05
         )
@@ -431,7 +409,7 @@ class TestVoiceSegmentDetection(unittest.TestCase):
         required_keys = ['t_start', 't_peak', 'a_start', 'a_stable', 'end']
         
         for start, end in segments:
-            features = onset_detection_gui.extract_feature_points(
+            features = self.onset_detection_gui.extract_feature_points(
                 self.audio, self.sr, start, end
             )
             
@@ -445,25 +423,13 @@ class TestVoiceSegmentDetection(unittest.TestCase):
     
     def test_feature_points_ordering(self):
         """Test that feature points are in correct temporal order."""
-        import sys
-        import unittest.mock as mock
-        if 'tkinter' not in sys.modules:
-            sys.modules['tkinter'] = mock.MagicMock()
-            sys.modules['tkinter.filedialog'] = mock.MagicMock()
-            sys.modules['tkinter.messagebox'] = mock.MagicMock()
-            sys.modules['tkinter.ttk'] = mock.MagicMock()
-        
-        import importlib
-        import onset_detection_gui
-        importlib.reload(onset_detection_gui)
-        
-        segments = onset_detection_gui.detect_voice_segments(
+        segments = self.onset_detection_gui.detect_voice_segments(
             self.audio, self.sr,
             amplitude_threshold_ratio=0.05
         )
         
         for start, end in segments:
-            features = onset_detection_gui.extract_feature_points(
+            features = self.onset_detection_gui.extract_feature_points(
                 self.audio, self.sr, start, end
             )
             
@@ -479,19 +445,7 @@ class TestVoiceSegmentDetection(unittest.TestCase):
     
     def test_detect_voice_segments_with_features_integration(self):
         """Test the combined detection and feature extraction function."""
-        import sys
-        import unittest.mock as mock
-        if 'tkinter' not in sys.modules:
-            sys.modules['tkinter'] = mock.MagicMock()
-            sys.modules['tkinter.filedialog'] = mock.MagicMock()
-            sys.modules['tkinter.messagebox'] = mock.MagicMock()
-            sys.modules['tkinter.ttk'] = mock.MagicMock()
-        
-        import importlib
-        import onset_detection_gui
-        importlib.reload(onset_detection_gui)
-        
-        y, sr, features_list = onset_detection_gui.detect_voice_segments_with_features(
+        y, sr, features_list = self.onset_detection_gui.detect_voice_segments_with_features(
             self.temp_wav_path,
             amplitude_threshold_ratio=0.05
         )

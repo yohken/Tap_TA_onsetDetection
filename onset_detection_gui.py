@@ -76,6 +76,14 @@ A_START_RMS_INCREASE_RATIO = 0.3  # 30% RMS increase indicates vowel onset
 # Threshold for a-stable detection (RMS variance stability)
 A_STABLE_VARIANCE_THRESHOLD = 0.1  # 10% variance indicates stability
 
+# Fraction of segment to search for t-peak (consonant burst)
+# We search only the first portion of the segment since consonant should be early
+CONSONANT_SEARCH_FRACTION = 0.33  # Search first 1/3 of segment
+
+# Small time offset (in seconds) to ensure temporal ordering of feature points
+# Used when calculated values would otherwise violate ordering constraints
+FEATURE_POINT_OFFSET_SEC = 0.01  # 10ms offset
+
 # ==============================================================================
 
 
@@ -234,8 +242,8 @@ def extract_feature_points(
     
     # Feature point 2: t_peak (burst maximum)
     # Find the first significant peak in the envelope (consonant burst)
-    # Look for peaks in the first third of the segment (where consonant should be)
-    search_end = max(len(env) // 3, 1)
+    # Look for peaks in the first portion of the segment (where consonant should be)
+    search_end = max(int(len(env) * CONSONANT_SEARCH_FRACTION), 1)
     first_part = env[:search_end]
     
     if len(first_part) > 0:
@@ -275,7 +283,7 @@ def extract_feature_points(
     
     # Ensure a_start is after t_peak
     if a_start_sec <= t_peak_sec:
-        a_start_sec = t_peak_sec + 0.01  # Add small offset
+        a_start_sec = t_peak_sec + FEATURE_POINT_OFFSET_SEC  # Add small offset
     
     # Feature point 4: a_stable (vowel stabilization)
     # Look for the point where RMS variance becomes low (stable vowel)
@@ -303,7 +311,7 @@ def extract_feature_points(
     
     # Ensure a_stable is after a_start
     if a_stable_sec <= a_start_sec:
-        a_stable_sec = a_start_sec + 0.01  # Add small offset
+        a_stable_sec = a_start_sec + FEATURE_POINT_OFFSET_SEC  # Add small offset
     
     # Ensure a_stable is before end
     if a_stable_sec >= end_sec:
