@@ -935,6 +935,10 @@ def plot_mfa_ta_detection_results(
                 ax3.text(mid_time, 0.5, interval.mark,
                         ha='center', va='center', fontsize=10, fontweight='bold')
     
+    # Explicitly set x-axis limits to ensure phoneme rectangles are visible
+    # This is required because add_patch() doesn't trigger autoscaling
+    ax3.set_xlim(time_axis[0], time_axis[-1])
+    
     # Add transition annotations
     for detail in ta_details:
         t_peak = detail['t_peak_sec']
@@ -1479,6 +1483,10 @@ def plot_ta_detection_results(
                     ax3.axvline(x=t_time, color='red', linestyle='--', alpha=0.7, linewidth=1.2)
                 for a_time in a_onset_times:
                     ax3.axvline(x=a_time, color='blue', linestyle='-', alpha=0.7, linewidth=1.2)
+                
+                # Explicitly set x-axis limits to ensure phoneme rectangles are visible
+                # This is required because add_patch() doesn't trigger autoscaling
+                ax3.set_xlim(time_axis[0], time_axis[-1])
             else:
                 ax3.text(0.5, 0.5, f'Tier "{tier_name}" not found in TextGrid',
                         transform=ax3.transAxes, ha='center', va='center')
