@@ -79,9 +79,15 @@ When a plot window opens, you have access to the following interactive features:
 
 ### HPF Frequency Control
 - **Slider**: Adjust the High-Pass Filter cutoff frequency from 100 Hz to 2000 Hz in 50 Hz steps
-- **Re-detect Button**: Click to recompute onset detection with the new HPF frequency
+- **Re-detect Button**: Click to recompute onset detection with the new parameters
 - **Onset Count Display**: Shows the number of detected onsets, updates automatically after re-detection
 - **Real-time Updates**: The waveform, envelope, and onset markers all update when you re-detect
+
+### Detection Threshold Control
+- **Slider**: Adjust the detection threshold from 1% to 50% in 1% steps
+- **Default**: 10% (Fujii method default)
+- **Lower threshold**: More sensitive detection, may increase false positives
+- **Higher threshold**: Less sensitive detection, may miss quieter onsets
 
 ### Marker Deletion (New!)
 - **Delete Markers**: Hold Cmd+Shift (Mac) or Ctrl+Shift (Windows/Linux) and click near a marker to delete it

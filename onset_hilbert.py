@@ -416,11 +416,12 @@ def plot_waveform_and_envelope_interactive(
     enable_export: bool = False,
 ) -> None:
     """
-    Interactive plotting with HPF slider and re-detect button using Fujii method.
+    Interactive plotting with HPF slider, threshold slider, and re-detect button using Fujii method.
     
     This function provides a GUI with:
     - Interactive slider to adjust HPF cutoff frequency (100-2000 Hz)
-    - Re-detect button to recompute onsets with new HPF frequency
+    - Interactive slider to adjust detection threshold (1%-50%)
+    - Re-detect button to recompute onsets with new parameters
     - X-axis zoom using mouse wheel
     - Optional: Cmd+Shift+Click to delete onset/peak markers
     - Optional: Export button to save data to CSV
@@ -429,7 +430,7 @@ def plot_waveform_and_envelope_interactive(
     The re-detection ALWAYS uses the Fujii method:
     1. Apply highpass_filter with new cutoff
     2. Compute hilbert_envelope
-    3. Run detect_onsets_and_peaks_from_envelope (10% threshold, backward search, linear interpolation)
+    3. Run detect_onsets_and_peaks_from_envelope (threshold from slider, backward search, linear interpolation)
     
     Args:
         wav_path: path to a mono WAV file (click or tap).
@@ -525,35 +526,49 @@ def plot_waveform_and_envelope_interactive(
                                 transform=ax1.transAxes, verticalalignment='top',
                                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
-    # Add slider for HPF frequency
-    plt.subplots_adjust(bottom=0.15)
-    ax_slider = plt.axes([0.15, 0.05, 0.40, 0.03])
-    slider = Slider(
-        ax_slider, 
-        'HPF Cutoff (Hz)',
+    # Add sliders for HPF frequency and threshold
+    # Layout: Two rows - sliders on top row, buttons on bottom row
+    plt.subplots_adjust(bottom=0.18)
+    
+    # HPF slider (shorter to avoid overlap with buttons)
+    ax_slider_hpf = plt.axes([0.15, 0.10, 0.30, 0.03])
+    slider_hpf = Slider(
+        ax_slider_hpf, 
+        'HPF (Hz)',
         100.0,  # min value
         2000.0,  # max value
         valinit=hp_cutoff_hz,
         valstep=50.0
     )
     
-    # Add buttons
+    # Threshold slider (on the same row as HPF slider)
+    ax_slider_threshold = plt.axes([0.55, 0.10, 0.30, 0.03])
+    slider_threshold = Slider(
+        ax_slider_threshold, 
+        'Threshold (%)',
+        1.0,  # min value (1%)
+        50.0,  # max value (50%)
+        valinit=threshold_ratio * 100.0,  # Convert ratio to percentage
+        valstep=1.0
+    )
+    
+    # Add buttons (on second row below sliders)
     button_width = 0.10
     button_height = 0.04
-    button_y = 0.05
+    button_y = 0.03
     
     # Re-detect button
-    ax_redetect = plt.axes([0.58, button_y, button_width, button_height])
+    ax_redetect = plt.axes([0.15, button_y, button_width, button_height])
     button_redetect = Button(ax_redetect, 'Re-detect')
     
     # Export button (if enabled)
     if enable_export:
-        ax_export = plt.axes([0.70, button_y, button_width, button_height])
+        ax_export = plt.axes([0.27, button_y, button_width, button_height])
         button_export = Button(ax_export, 'Export')
     
     # Next button (if callback provided)
     if on_next_callback is not None:
-        ax_next = plt.axes([0.82, button_y, button_width, button_height])
+        ax_next = plt.axes([0.39, button_y, button_width, button_height])
         button_next = Button(ax_next, 'Next')
     
     # Store current onset/peak times for manual editing
@@ -563,7 +578,7 @@ def plot_waveform_and_envelope_interactive(
     current_onsets = list(onset_times)
     current_peaks = list(peak_times)
     
-    def update_plot(new_hp_cutoff: float, preserve_xlim: bool = False):
+    def update_plot(new_hp_cutoff: float, new_threshold_ratio: float, preserve_xlim: bool = False):
         """Update the plot with new detection results using Fujii method."""
         # Save current xlim if needed
         if preserve_xlim:
@@ -579,7 +594,7 @@ def plot_waveform_and_envelope_interactive(
         # Re-detect onsets and peaks using Fujii method
         onset_times_new, peak_times_new = detect_onsets_and_peaks_from_envelope(
             env_new, sr,
-            threshold_ratio=threshold_ratio,
+            threshold_ratio=new_threshold_ratio,
             min_distance_ms=min_distance_ms
         )
         
@@ -690,8 +705,9 @@ def plot_waveform_and_envelope_interactive(
     
     def on_redetect_click(event):
         """Handle re-detect button click."""
-        new_hp_cutoff = slider.val
-        update_plot(new_hp_cutoff, preserve_xlim=False)
+        new_hp_cutoff = slider_hpf.val
+        new_threshold_ratio = slider_threshold.val / 100.0  # Convert percentage back to ratio
+        update_plot(new_hp_cutoff, new_threshold_ratio, preserve_xlim=False)
     
     button_redetect.on_clicked(on_redetect_click)
     
@@ -810,7 +826,7 @@ def plot_waveform_and_envelope_interactive(
     def on_scroll(event):
         """Handle mouse wheel scroll for X-axis zoom or Y-axis zoom with modifier key."""
         # Check if we're in a button or slider area
-        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_redetect:
+        if event.inaxes is None or event.inaxes == ax_slider_hpf or event.inaxes == ax_slider_threshold or event.inaxes == ax_redetect:
             return
         if enable_export and event.inaxes == ax_export:
             return
@@ -869,7 +885,7 @@ def plot_waveform_and_envelope_interactive(
     def on_press(event):
         """Handle mouse button press for panning."""
         # Check if we're in a button or slider area
-        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_redetect:
+        if event.inaxes is None or event.inaxes == ax_slider_hpf or event.inaxes == ax_slider_threshold or event.inaxes == ax_redetect:
             return
         if enable_export and event.inaxes == ax_export:
             return
@@ -911,7 +927,7 @@ def plot_waveform_and_envelope_interactive(
     def on_double_click(event):
         """Handle double-click to auto-scale Y-axis to 85% of max value."""
         # Check if we're in a button or slider area
-        if event.inaxes is None or event.inaxes == ax_slider or event.inaxes == ax_redetect:
+        if event.inaxes is None or event.inaxes == ax_slider_hpf or event.inaxes == ax_slider_threshold or event.inaxes == ax_redetect:
             return
         if enable_export and event.inaxes == ax_export:
             return
