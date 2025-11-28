@@ -11,6 +11,7 @@ import os
 import tempfile
 import scipy.io.wavfile as wavfile
 import soundfile as sf
+import pandas as pd
 import onset_hilbert
 
 
@@ -338,7 +339,6 @@ class TestCSVExport(unittest.TestCase):
             # Check file exists and can be read
             self.assertTrue(os.path.exists(csv_path))
             
-            import pandas as pd
             df = pd.read_csv(csv_path)
             
             # Check columns
@@ -368,7 +368,6 @@ class TestCSVExport(unittest.TestCase):
                 csv_path, onset_times, peak_times, label="test"
             )
             
-            import pandas as pd
             df = pd.read_csv(csv_path)
             
             # Check label column exists
@@ -728,7 +727,6 @@ class TestCSVExportWithRetry(unittest.TestCase):
             # Check file was created and contains correct data
             self.assertTrue(os.path.exists(csv_path))
             
-            import pandas as pd
             df = pd.read_csv(csv_path)
             self.assertEqual(len(df), 3)
             np.testing.assert_array_almost_equal(df['onset_sec'].values, onset_times)

@@ -343,7 +343,7 @@ def save_onsets_and_peaks_csv_with_retry(
     peak_times: np.ndarray,
     *,
     label: str | None = None,
-    parent_window: "tk.Tk | None" = None,
+    parent_window: object | None = None,
 ) -> tuple[bool, str | None]:
     """
     Save detected onset and peak times to a CSV file with error handling and retry.
@@ -356,7 +356,7 @@ def save_onsets_and_peaks_csv_with_retry(
         onset_times: 1D array of onset times [s].
         peak_times:  1D array of peak times [s].
         label: optional label (e.g., "click" or "tap").
-        parent_window: optional parent tkinter window for dialogs.
+        parent_window: optional parent tkinter window for dialogs (tkinter.Tk instance).
     
     Returns:
         Tuple of (success, actual_path):
@@ -376,7 +376,7 @@ def save_onsets_and_peaks_csv_with_retry(
                 current_path, onset_times, peak_times, label=label
             )
             return (True, current_path)
-        except (OSError, PermissionError, IOError) as e:
+        except OSError as e:
             # Only import tkinter when needed (for error dialogs)
             try:
                 import tkinter as tk
@@ -386,52 +386,53 @@ def save_onsets_and_peaks_csv_with_retry(
                 raise e
             
             # Create a root window if none provided
-            if parent_window is None:
-                root = tk.Tk()
-                root.withdraw()
-                root.attributes('-topmost', True)
-            else:
-                root = parent_window
-            
-            # Inform user of the error
-            error_message = (
-                f"ファイルの書き込みに失敗しました。\n\n"
-                f"エラー: {str(e)}\n"
-                f"パス: {current_path}\n\n"
-                f"別の保存場所を選択しますか？"
-            )
-            
-            retry = messagebox.askyesno(
-                "ファイル書き込みエラー",
-                error_message,
-                icon='warning'
-            )
-            
-            if not retry:
-                # User chose not to retry
+            root = None
+            try:
                 if parent_window is None:
+                    root = tk.Tk()
+                    root.withdraw()
+                    root.attributes('-topmost', True)
+                else:
+                    root = parent_window
+                
+                # Inform user of the error
+                error_message = (
+                    f"ファイルの書き込みに失敗しました。\n\n"
+                    f"エラー: {str(e)}\n"
+                    f"パス: {current_path}\n\n"
+                    f"別の保存場所を選択しますか？"
+                )
+                
+                retry = messagebox.askyesno(
+                    "ファイル書き込みエラー",
+                    error_message,
+                    icon='warning'
+                )
+                
+                if not retry:
+                    # User chose not to retry
+                    return (False, None)
+                
+                # Get default filename from current path
+                default_name = os.path.basename(current_path)
+                
+                # Show save file dialog for new location
+                new_path = filedialog.asksaveasfilename(
+                    title="新しい保存場所を選択",
+                    defaultextension=".csv",
+                    initialfile=default_name,
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+                )
+                
+                if not new_path:
+                    # User cancelled the dialog
+                    return (False, None)
+                
+                current_path = new_path
+            finally:
+                # Clean up root window if we created it
+                if parent_window is None and root is not None:
                     root.destroy()
-                return (False, None)
-            
-            # Get default filename from current path
-            default_name = os.path.basename(current_path)
-            
-            # Show save file dialog for new location
-            new_path = filedialog.asksaveasfilename(
-                title="新しい保存場所を選択",
-                defaultextension=".csv",
-                initialfile=default_name,
-                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-            )
-            
-            if parent_window is None:
-                root.destroy()
-            
-            if not new_path:
-                # User cancelled the dialog
-                return (False, None)
-            
-            current_path = new_path
 
 
 def plot_waveform_and_envelope(
