@@ -4,14 +4,14 @@ A graphical user interface for the onset detection module.
 
 ## Features
 
-- **File Selection Dialog**: Select audio files (and TextGrid files) using native file dialogs
+- **File Selection Dialog**: Select audio files using native file dialogs
 - **Automatic Plotting**: Results are automatically visualized using matplotlib
 - **Interactive HPF Control**: Adjust High-Pass Filter frequency after initial detection with a slider and re-detect button
 - **Interactive Plot Zoom**: Use mouse wheel to zoom in/out on the time axis for detailed analysis
-- **Three Detection Methods**:
+- **Automatic MFA TextGrid Generation**: For /t/ burst detection, TextGrid files are automatically generated using Montreal Forced Aligner (MFA)
+- **Two Detection Methods**:
   1. Tap Onset Detection - Select a WAV file to detect percussive taps
-  2. /t/ Burst Onset Detection - Select WAV and TextGrid files to detect /t/ bursts
-  3. Click Track Generation - Generate theoretical click positions with custom BPM
+  2. /t/ Burst Onset Detection - Select a WAV file to detect /t/ bursts (TextGrid automatically generated with MFA)
 
 ## Usage
 
@@ -35,23 +35,22 @@ python onset_detection_gui.py
 
 1. Click "Detect /t/ Burst Onsets"
 2. Select a WAV file containing speech with /t/ sounds
-3. Select the corresponding TextGrid file from MFA
+3. The GUI will automatically:
+   - Run MFA (Montreal Forced Aligner) to generate a TextGrid file
+   - Detect /t/ burst onsets using the generated TextGrid
 4. View the results in the text area
 5. A plot window will open showing the detection results
 6. **Adjust the HPF frequency slider** (100-2000 Hz) to change the filter cutoff
 7. **Click the "Re-detect" button** to recompute onsets with the new frequency
 8. **Use mouse wheel to zoom in/out on the X-axis** for detailed inspection
 
-### Click Track Generation
-
-1. Click "Generate Click Track"
-2. Enter BPM, number of clicks, and subdivision
-3. View the generated onset times
+**Note**: MFA must be installed for /t/ burst detection to work. See [MFA installation guide](https://montreal-forced-aligner.readthedocs.io/).
 
 ## Requirements
 
 - Python 3.10+
 - tkinter (usually included with Python)
+- MFA (Montreal Forced Aligner) - required for /t/ burst detection
 - All dependencies from requirements.txt
 
 ## Screenshots

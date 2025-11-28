@@ -22,10 +22,6 @@ Since the development environment is headless, here's a textual representation o
 │              │   Detect /t/ Burst Onsets      │                  │
 │              └────────────────────────────────┘                  │
 │                                                                    │
-│              ┌────────────────────────────────┐                  │
-│              │   Generate Click Track         │                  │
-│              └────────────────────────────────┘                  │
-│                                                                    │
 │                       Status: Ready                               │
 │                                                                    │
 │  ┌───────────────── Results ────────────────────────────────┐   │
@@ -110,42 +106,13 @@ After detection, a matplotlib window opens showing the results:
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## Click Track Generation Dialog
-
-When you click "Generate Click Track", a parameter dialog opens:
-
-```
-┌─────────────────────────────────────────┐
-│  Click Track Parameters           [_][X]│
-├─────────────────────────────────────────┤
-│                                         │
-│  BPM (Beats Per Minute):                │
-│  ┌──────────────────┐                   │
-│  │ 120              │                   │
-│  └──────────────────┘                   │
-│                                         │
-│  Number of Clicks:                      │
-│  ┌──────────────────┐                   │
-│  │ 8                │                   │
-│  └──────────────────┘                   │
-│                                         │
-│  Subdivision:                           │
-│  ┌──────────────────────────────┐ ▼    │
-│  │ 1 (quarter notes)            │      │
-│  └──────────────────────────────┘      │
-│                                         │
-│      [Generate]      [Cancel]          │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
 ## Key Features Demonstrated
 
 1. **Simple, Clean Interface**: Large buttons, clear labels
 2. **File Dialogs**: Native OS file selection
 3. **Real-time Feedback**: Status updates and scrollable results
 4. **Automatic Plotting**: Matplotlib visualization opens automatically
-5. **Parameter Input**: Dialog for click track generation
+5. **Automatic MFA Integration**: TextGrid generation for /t/ burst detection
 6. **Error Handling**: Clear error messages in dialogs
 
 ## Usage Flow
