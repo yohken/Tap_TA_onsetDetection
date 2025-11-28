@@ -198,6 +198,58 @@ t_burst_onsets = onset_detection.detect_t_burst_onsets_from_mfa(
 print(f"Detected {len(t_burst_onsets)} /t/ bursts")
 ```
 
+### 4. High-Precision TA Detection with Voicing (NEW)
+
+Detect both T burst onset and A vowel onset using voicing detection (F0 tracking):
+
+```python
+# Detect both T and A onsets using voicing detection
+t_onsets, a_onsets, details = onset_detection.detect_ta_onsets_with_voicing(
+    'speech.wav',
+    'speech.TextGrid',
+    tier_name='phones',
+    phone_label='t',
+    max_transition_sec=0.2,      # Maximum T-A transition time (physiological limit)
+    fmin=50.0,                   # Minimum F0 for voicing detection
+    fmax=500.0                   # Maximum F0 for voicing detection
+)
+
+# Print results
+for i, (t, a, detail) in enumerate(zip(t_onsets, a_onsets, details)):
+    print(f"TA #{i+1}: T onset={t:.3f}s, A onset={a:.3f}s, "
+          f"transition={detail['transition_sec']*1000:.1f}ms, "
+          f"method={detail['detection_method']}")
+```
+
+#### Low-Level TA Transition Detection
+
+For more control, use the `find_ta_transition()` function directly:
+
+```python
+import librosa
+
+# Load audio
+y, sr = librosa.load('speech.wav', sr=None, mono=True)
+
+# Given a T peak sample position
+t_peak_sample = 5000
+
+# Find the A onset using voicing detection
+result = onset_detection.find_ta_transition(
+    y, sr, t_peak_sample,
+    max_transition_sec=0.2,      # Physiological constraint
+    fmin=50.0,                   # Min F0 for voicing
+    fmax=500.0,                  # Max F0 for voicing
+    use_rms_fallback=True        # Fall back to RMS if voicing not found
+)
+
+print(f"T peak: {result['t_peak_sec']:.3f}s")
+print(f"A onset: {result['a_start_sec']:.3f}s")
+print(f"Transition: {result['transition_sec']*1000:.1f}ms")
+print(f"Detection method: {result['detection_method']}")
+print(f"Corrected: {result['corrected']}")
+```
+
 ## API Reference
 
 ### Core Functions
@@ -225,6 +277,20 @@ Detect tap onsets using Hilbert envelope at 48kHz with high-pass filtering. Onse
 
 #### `detect_t_burst_onsets_from_mfa()`
 Detect /t/ burst onsets using MFA TextGrid and high-frequency energy analysis.
+
+### High-Precision TA Detection Functions (NEW)
+
+#### `detect_voicing_onset()`
+Detect the first voiced frame after a given position using F0 (pitch) estimation via librosa.pyin.
+
+#### `find_ta_transition()`
+Find the T-A transition point using voicing detection with physiological constraints (max 0.2s transition).
+
+#### `detect_ta_onsets_with_voicing()`
+Detect both T burst onsets and A vowel onsets from audio with MFA TextGrid, using voicing detection for high-precision A onset timing.
+
+#### `plot_ta_detection_results()`
+Visualization of TA detection results showing T and A onsets with transition timing.
 
 #### `plot_envelope_with_onsets()`
 Visualization helper for debugging onset detection.
@@ -315,6 +381,52 @@ The **Fujii method** is the primary onset detection method implemented in `onset
    - Compute high-frequency RMS envelope (>2000 Hz)
    - Detect earliest onset within the segment
    - This captures the burst release after closure
+
+### High-Precision TA Detection (NEW)
+
+The **high-precision TA detection** addresses the problem of accurately detecting the A vowel onset after the T burst. The algorithm uses voicing detection (F0 tracking) combined with physiological/acoustic constraints.
+
+**Problem addressed:**
+- Mechanical detection of A onset can be unnaturally early or late
+- The T burst is a voiceless plosive that cannot sustain for long
+- The actual auditory perception of A onset corresponds to the start of voicing (vocal fold vibration)
+
+**Algorithm:**
+1. **T burst detection**: Use high-frequency RMS envelope to find T burst onset
+2. **T peak detection**: Find maximum amplitude after T burst (within 50ms window)
+3. **Voicing detection**: Use librosa.pyin for F0 (pitch) tracking starting from T peak
+4. **A onset**: First frame where valid F0 is detected (voiced frame)
+5. **Transition constraint**: Enforce maximum T-A transition time (default 0.2 seconds)
+6. **RMS fallback**: If voicing not detected, use RMS envelope threshold crossing
+
+**Physiological basis:**
+- The T consonant (/t/) is a voiceless plosive - vocal folds are not vibrating
+- The A vowel (/a/) is voiced - requires vocal fold vibration
+- The transition from T to A typically occurs within 200ms (physiological limit)
+- Using F0 detection provides a phonetically-meaningful A onset point
+
+**Key parameters:**
+- `max_transition_sec`: Maximum T-A transition (default 0.2s)
+- `fmin`: Minimum F0 for voicing detection (default 50 Hz)
+- `fmax`: Maximum F0 for voicing detection (default 500 Hz)
+- `voicing_frame_length_ms`: Frame length for pyin (default 25ms)
+- `voicing_hop_length_ms`: Hop size for pyin (default 5ms)
+
+**Example code:**
+```python
+# Example from the problem statement
+from librosa import pyin
+import onset_detection
+
+def find_ta_transition_example(y, sr, t_peak_sample):
+    # Using the new function
+    result = onset_detection.find_ta_transition(
+        y, sr, t_peak_sample,
+        max_transition_sec=0.2,  # Physiological limit
+        fmin=50, fmax=500
+    )
+    return result['a_start_sec']
+```
 
 ## Requirements
 
