@@ -19,7 +19,7 @@ Since the development environment is headless, here's a textual representation o
 │              └────────────────────────────────┘                  │
 │                                                                    │
 │              ┌────────────────────────────────┐                  │
-│              │   Detect /t/ Burst Onsets      │                  │
+│              │   Detect Voice Segments (ta)      │                  │
 │              └────────────────────────────────┘                  │
 │                                                                    │
 │                       Status: Ready                               │
@@ -112,7 +112,7 @@ After detection, a matplotlib window opens showing the results:
 2. **File Dialogs**: Native OS file selection
 3. **Real-time Feedback**: Status updates and scrollable results
 4. **Automatic Plotting**: Matplotlib visualization opens automatically
-5. **Automatic MFA Integration**: TextGrid generation for /t/ burst detection
+5. **Voice Segment Detection**: Feature point extraction for ta syllables
 6. **Error Handling**: Clear error messages in dialogs
 
 ## Usage Flow

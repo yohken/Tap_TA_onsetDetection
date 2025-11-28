@@ -3,12 +3,10 @@ GUI application for onset detection with file selection and result plotting.
 
 This module provides a graphical user interface for:
 1. Tap onset detection from WAV files
-2. /t/ burst onset detection from WAV files with automatic MFA TextGrid generation
-3. Voice segment detection (e.g., "ta" syllables) with feature point extraction
+2. Voice segment detection (e.g., "ta" syllables) with feature point extraction
 
 Features:
 - File selection dialogs for audio files
-- Automatic MFA TextGrid generation for /t/ burst detection
 - Voice segment detection based on amplitude/RMS threshold
 - Feature point extraction for each voice segment:
   - t-start: segment start (consonant onset)
@@ -20,7 +18,7 @@ Features:
 - User-friendly interface using tkinter
 
 Target Python version: 3.10+
-Dependencies: tkinter (standard library), onset_detection module, mfa_onset_pipeline module,
+Dependencies: tkinter (standard library), onset_detection module,
               librosa, numpy, scipy, matplotlib
 """
 
@@ -35,9 +33,6 @@ from matplotlib.widgets import Slider, Button
 import onset_detection
 import onset_hilbert
 import os
-import tempfile
-from pathlib import Path
-import mfa_onset_pipeline
 import numpy as np
 import scipy.signal
 
@@ -629,15 +624,6 @@ class OnsetDetectionGUI:
         )
         self.tap_button.grid(row=0, column=0, pady=10, padx=10)
         
-        # /t/ burst detection button
-        self.burst_button = ttk.Button(
-            button_frame,
-            text="Detect /t/ Burst Onsets",
-            command=self.detect_t_burst_onsets,
-            width=30
-        )
-        self.burst_button.grid(row=1, column=0, pady=10, padx=10)
-        
         # Voice segment detection button (for "ta" syllables with feature points)
         self.voice_segment_button = ttk.Button(
             button_frame,
@@ -645,7 +631,7 @@ class OnsetDetectionGUI:
             command=self.detect_voice_segments,
             width=30
         )
-        self.voice_segment_button.grid(row=2, column=0, pady=10, padx=10)
+        self.voice_segment_button.grid(row=1, column=0, pady=10, padx=10)
         
         # Status label
         self.status_label = ttk.Label(
@@ -780,133 +766,6 @@ class OnsetDetectionGUI:
             
         except Exception as e:
             error_msg = f"Error during tap detection: {str(e)}"
-            self.append_result(f"\nERROR: {error_msg}")
-            self.update_status("Error occurred", 'red')
-            messagebox.showerror("Error", error_msg)
-    
-    def detect_t_burst_onsets(self):
-        """Handle /t/ burst onset detection with file selection and automatic MFA TextGrid generation."""
-        self.clear_results()
-        self.update_status("Select WAV file for /t/ burst detection...", 'blue')
-        
-        # Open file dialog for WAV file
-        wav_path = filedialog.askopenfilename(
-            title="Select WAV file for /t/ burst detection",
-            filetypes=[("WAV files", "*.wav"), ("All files", "*.*")]
-        )
-        
-        if not wav_path:
-            self.update_status("Selection cancelled", 'orange')
-            return
-        
-        try:
-            self.update_status("Generating TextGrid with MFA...", 'blue')
-            self.append_result(f"Processing file: {os.path.basename(wav_path)}")
-            self.append_result("=" * 60)
-            self.append_result("Step 1: Running MFA alignment to generate TextGrid...")
-            self.root.update_idletasks()
-            
-            # Create MFA pipeline
-            wav_path_obj = Path(wav_path)
-            
-            # Create temporary directories for MFA
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_dir_path = Path(temp_dir)
-                corpus_dir = temp_dir_path / "corpus"
-                output_dir = temp_dir_path / "output"
-                
-                # Initialize MFA pipeline
-                pipeline = mfa_onset_pipeline.MFAOnsetPipeline(
-                    output_dir=output_dir,
-                    log_level=30  # WARNING level to reduce output
-                )
-                
-                # Check if MFA is available
-                if not pipeline.check_mfa_available():
-                    error_msg = "MFA (Montreal Forced Aligner) is not installed or not available.\n"
-                    error_msg += "Please install MFA: https://montreal-forced-aligner.readthedocs.io/"
-                    self.append_result(f"\nERROR: {error_msg}")
-                    self.update_status("MFA not available", 'red')
-                    messagebox.showerror("MFA Not Available", error_msg)
-                    return
-                
-                # Create corpus structure
-                self.append_result("  Creating corpus structure...")
-                self.root.update_idletasks()
-                if not pipeline.create_corpus_structure([wav_path_obj], corpus_dir, text_content="ta"):
-                    error_msg = "Failed to create MFA corpus structure"
-                    self.append_result(f"\nERROR: {error_msg}")
-                    self.update_status("Error occurred", 'red')
-                    messagebox.showerror("Error", error_msg)
-                    return
-                
-                # Run MFA alignment
-                self.append_result("  Running MFA alignment (this may take a moment)...")
-                self.root.update_idletasks()
-                mfa_output_dir = temp_dir_path / "mfa_output"
-                if not pipeline.run_mfa_alignment(corpus_dir, mfa_output_dir):
-                    error_msg = "MFA alignment failed. Please check that the audio file contains speech."
-                    self.append_result(f"\nERROR: {error_msg}")
-                    self.update_status("MFA alignment failed", 'red')
-                    messagebox.showerror("Error", error_msg)
-                    return
-                
-                # Find the generated TextGrid file
-                tg_path = mfa_output_dir / f"{wav_path_obj.stem}.TextGrid"
-                if not tg_path.exists():
-                    error_msg = f"TextGrid file not found: {tg_path}"
-                    self.append_result(f"\nERROR: {error_msg}")
-                    self.update_status("TextGrid not found", 'red')
-                    messagebox.showerror("Error", error_msg)
-                    return
-                
-                self.append_result("  TextGrid generated successfully!")
-                self.append_result("\nStep 2: Detecting /t/ burst onsets...")
-                self.update_status("Processing...", 'blue')
-                self.root.update_idletasks()
-                
-                # Load audio for interactive plotting
-                y, sr = librosa.load(wav_path, sr=None, mono=True)
-                
-                # Initial detection with default parameters
-                # Note: /t/ burst detection uses RMS envelope method from onset_detection
-                # as it's optimized for TextGrid-guided detection
-                high_freq_min = 2000.0
-                diff_threshold_std = 2.0
-                
-                onset_times = onset_detection.detect_t_burst_onsets_from_mfa(
-                    wav_path,
-                    str(tg_path),
-                    tier_name="phones",
-                    phone_label="t",
-                    high_freq_min=high_freq_min,
-                    diff_threshold_std=diff_threshold_std
-                )
-                
-                # Display results
-                self.append_result(f"\nDetected {len(onset_times)} /t/ burst onsets:")
-                for i, t in enumerate(onset_times, 1):
-                    self.append_result(f"  {i}. {t:.3f} seconds")
-                
-                # Plot results with interactive controls
-                self.append_result("\nGenerating interactive plot...")
-                self.append_result("Use the slider to adjust HPF frequency and click 'Re-detect' to update.")
-                self.append_result("Note: /t/ burst uses RMS envelope method (not Fujii method).")
-                onset_detection.plot_envelope_with_onsets_interactive(
-                    wav_path, y, sr,
-                    initial_hp_cutoff=high_freq_min,
-                    diff_threshold_std=diff_threshold_std,
-                    min_interval_ms=50.0,
-                    title=f"/t/ Burst Onset Detection - {os.path.basename(wav_path)}",
-                    detection_type="t_burst"
-                )
-                
-                self.update_status("Detection complete!", 'green')
-                self.append_result("\n" + "=" * 60)
-                self.append_result("Plot window opened. Close it to continue.")
-            
-        except Exception as e:
-            error_msg = f"Error during /t/ burst detection: {str(e)}"
             self.append_result(f"\nERROR: {error_msg}")
             self.update_status("Error occurred", 'red')
             messagebox.showerror("Error", error_msg)
