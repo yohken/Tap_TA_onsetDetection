@@ -304,11 +304,11 @@ class TestVoiceSegmentDetection(unittest.TestCase):
     
     These tests validate the new voice segment detection functions that
     detect segments (e.g., 'ta' syllables) and extract feature points:
-    - t_start: segment start
+    - t_start: consonant onset (Fujii 10% method)
     - t_peak: burst maximum
-    - a_start: vowel onset
-    - a_stable: vowel stabilization
-    - end: segment end
+    - a_start: vowel onset (periodicity-based voicing detection)
+    - a_peak: first stable periodic peak
+    - a_end: segment end
     """
     
     @classmethod

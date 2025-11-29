@@ -9,17 +9,17 @@ Features:
 - File selection dialogs for audio files
 - Voice segment detection based on amplitude/RMS threshold
 - Feature point extraction for each voice segment:
-  - t-start: segment start (consonant onset)
-  - t-peak: burst maximum point
-  - a-start: transition from t to a (vowel onset)
-  - a-stable: vowel stabilization point
-  - end: segment end
+  - t_start: consonant onset (Fujii 10% method)
+  - t_peak: burst maximum point
+  - a_start: vowel onset (periodicity-based voicing detection)
+  - a_peak: first stable periodic peak
+  - a_end: segment end
 - Automatic visualization of detection results with color-coded markers
 - User-friendly interface using tkinter
 
 Target Python version: 3.10+
 Dependencies: tkinter (standard library), onset_detection module,
-              librosa, numpy, scipy, matplotlib
+              librosa, numpy, scipy, matplotlib, ta_onset_analysis
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 import onset_detection
 import onset_hilbert
+import ta_onset_analysis
 import os
 import numpy as np
 import scipy.signal
@@ -62,23 +63,6 @@ RMS_FRAME_LENGTH_MS = 5.0
 
 # RMS hop size in milliseconds
 RMS_HOP_LENGTH_MS = 1.0
-
-# Threshold ratio for t-peak detection (fraction of local max)
-T_PEAK_THRESHOLD_RATIO = 0.9  # 90% of local max
-
-# Threshold for a-start detection (ratio of RMS increase from t-peak)
-A_START_RMS_INCREASE_RATIO = 0.3  # 30% RMS increase indicates vowel onset
-
-# Threshold for a-stable detection (RMS variance stability)
-A_STABLE_VARIANCE_THRESHOLD = 0.1  # 10% variance indicates stability
-
-# Fraction of segment to search for t-peak (consonant burst)
-# We search only the first portion of the segment since consonant should be early
-CONSONANT_SEARCH_FRACTION = 0.33  # Search first 1/3 of segment
-
-# Small time offset (in seconds) to ensure temporal ordering of feature points
-# Used when calculated values would otherwise violate ordering constraints
-FEATURE_POINT_OFFSET_SEC = 0.01  # 10ms offset
 
 # ==============================================================================
 
@@ -358,8 +342,6 @@ def extract_feature_points(
         Dictionary with feature point times in seconds:
         {'t_start': float, 't_peak': float, 'a_start': float, 'a_peak': float, 'a_end': float}
     """
-    import ta_onset_analysis
-    
     return ta_onset_analysis.extract_ta_feature_points(
         y, sr, segment_start, segment_end,
         hpf_cutoff=hpf_cutoff,
