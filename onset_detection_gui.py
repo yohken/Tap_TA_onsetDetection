@@ -64,6 +64,10 @@ RMS_FRAME_LENGTH_MS = 5.0
 # RMS hop size in milliseconds
 RMS_HOP_LENGTH_MS = 1.0
 
+# Waveform alpha values for display
+WAVEFORM_ALPHA_DEFAULT = 0.5  # Alpha when spectrogram is hidden
+WAVEFORM_ALPHA_WITH_SPECTROGRAM = 0.8  # Alpha when spectrogram is shown
+
 # ==============================================================================
 
 
@@ -453,7 +457,7 @@ def plot_voice_segments_interactive(
     
     # Plot waveform
     time_axis = np.arange(len(y)) / sr
-    waveform_line, = ax1.plot(time_axis, y, alpha=0.5, linewidth=0.5, color='blue', label='Waveform')
+    waveform_line, = ax1.plot(time_axis, y, alpha=WAVEFORM_ALPHA_DEFAULT, linewidth=0.5, color='blue', label='Waveform')
     ax1.set_ylabel('Amplitude')
     ax1.set_title(title if title else f'Voice Segment Detection - {os.path.basename(wav_path)}')
     ax1.grid(True, alpha=0.3)
@@ -573,7 +577,7 @@ def plot_voice_segments_interactive(
             ax1_spec.set_visible(False)
             # Restore waveform alpha based on its visibility state
             if waveform_state['visible']:
-                waveform_line.set_alpha(0.5)
+                waveform_line.set_alpha(WAVEFORM_ALPHA_DEFAULT)
             spectrogram_state['visible'] = False
             button_spectrogram.label.set_text('Spectrogram')
         else:
@@ -595,7 +599,7 @@ def plot_voice_segments_interactive(
             ax1_spec.set_ylim(spec_freqs[0], spec_freqs[-1])
             # Waveform remains visible (if enabled) with higher alpha when spectrogram is shown
             if waveform_state['visible']:
-                waveform_line.set_alpha(0.8)
+                waveform_line.set_alpha(WAVEFORM_ALPHA_WITH_SPECTROGRAM)
             spectrogram_state['visible'] = True
             button_spectrogram.label.set_text('Hide Spec')
         
@@ -615,9 +619,9 @@ def plot_voice_segments_interactive(
             waveform_line.set_visible(True)
             # Set alpha based on spectrogram visibility
             if spectrogram_state['visible']:
-                waveform_line.set_alpha(0.8)
+                waveform_line.set_alpha(WAVEFORM_ALPHA_WITH_SPECTROGRAM)
             else:
-                waveform_line.set_alpha(0.5)
+                waveform_line.set_alpha(WAVEFORM_ALPHA_DEFAULT)
             waveform_state['visible'] = True
             button_waveform.label.set_text('Hide Wave')
         
