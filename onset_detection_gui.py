@@ -29,7 +29,7 @@ from tkinter import filedialog, messagebox, ttk
 import librosa
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Button
 import onset_detection
 import onset_hilbert
 import ta_onset_analysis
@@ -63,6 +63,10 @@ RMS_FRAME_LENGTH_MS = 5.0
 
 # RMS hop size in milliseconds
 RMS_HOP_LENGTH_MS = 1.0
+
+# Waveform alpha values for display
+WAVEFORM_ALPHA_DEFAULT = 0.5  # Alpha when spectrogram is hidden
+WAVEFORM_ALPHA_WITH_SPECTROGRAM = 0.8  # Alpha when spectrogram is shown
 
 # ==============================================================================
 
@@ -453,7 +457,7 @@ def plot_voice_segments_interactive(
     
     # Plot waveform
     time_axis = np.arange(len(y)) / sr
-    waveform_line, = ax1.plot(time_axis, y, alpha=0.5, linewidth=0.5, color='blue', label='Waveform')
+    waveform_line, = ax1.plot(time_axis, y, alpha=WAVEFORM_ALPHA_DEFAULT, linewidth=0.5, color='blue', label='Waveform')
     ax1.set_ylabel('Amplitude')
     ax1.set_title(title if title else f'Voice Segment Detection - {os.path.basename(wav_path)}')
     ax1.grid(True, alpha=0.3)
@@ -534,25 +538,14 @@ def plot_voice_segments_interactive(
         fontsize=10
     )
     
-    # Add sliders
-    plt.subplots_adjust(bottom=0.18)
-    
-    # Threshold slider (shortened to make room for buttons)
-    ax_slider = plt.axes([0.15, 0.10, 0.30, 0.03])
-    slider_threshold = Slider(
-        ax_slider,
-        'Threshold (%)',
-        1.0,
-        30.0,
-        valinit=initial_threshold_ratio * 100,
-        valstep=0.5
-    )
+    # Add buttons (no threshold slider)
+    plt.subplots_adjust(bottom=0.12)
     
     # Button layout - position buttons in a row
     button_width = 0.10
     button_height = 0.04
-    button_y = 0.10
-    button_start_x = 0.50
+    button_y = 0.04
+    button_start_x = 0.15
     button_spacing = 0.02
     
     # Re-detect button
@@ -563,8 +556,15 @@ def plot_voice_segments_interactive(
     ax_spectrogram = plt.axes([button_start_x + button_width + button_spacing, button_y, button_width, button_height])
     button_spectrogram = Button(ax_spectrogram, 'Spectrogram')
     
+    # Waveform toggle button
+    ax_waveform = plt.axes([button_start_x + 2 * (button_width + button_spacing), button_y, button_width, button_height])
+    button_waveform = Button(ax_waveform, 'Hide Wave')
+    
+    # State for waveform visibility
+    waveform_state = {'visible': True}
+    
     # Export button
-    ax_export = plt.axes([button_start_x + 2 * (button_width + button_spacing), button_y, button_width, button_height])
+    ax_export = plt.axes([button_start_x + 3 * (button_width + button_spacing), button_y, button_width, button_height])
     button_export = Button(ax_export, 'Export')
     
     def toggle_spectrogram(event):
@@ -575,7 +575,9 @@ def plot_voice_segments_interactive(
                 spectrogram_state['image'].remove()
                 spectrogram_state['image'] = None
             ax1_spec.set_visible(False)
-            waveform_line.set_alpha(0.5)
+            # Restore waveform alpha based on its visibility state
+            if waveform_state['visible']:
+                waveform_line.set_alpha(WAVEFORM_ALPHA_DEFAULT)
             spectrogram_state['visible'] = False
             button_spectrogram.label.set_text('Spectrogram')
         else:
@@ -595,13 +597,37 @@ def plot_voice_segments_interactive(
             )
             ax1_spec.set_visible(True)
             ax1_spec.set_ylim(spec_freqs[0], spec_freqs[-1])
-            waveform_line.set_alpha(0.8)  # Make waveform more visible
+            # Waveform remains visible (if enabled) with higher alpha when spectrogram is shown
+            if waveform_state['visible']:
+                waveform_line.set_alpha(WAVEFORM_ALPHA_WITH_SPECTROGRAM)
             spectrogram_state['visible'] = True
             button_spectrogram.label.set_text('Hide Spec')
         
         fig.canvas.draw_idle()
     
     button_spectrogram.on_clicked(toggle_spectrogram)
+    
+    def toggle_waveform(event):
+        """Toggle waveform visibility."""
+        if waveform_state['visible']:
+            # Hide waveform
+            waveform_line.set_visible(False)
+            waveform_state['visible'] = False
+            button_waveform.label.set_text('Show Wave')
+        else:
+            # Show waveform
+            waveform_line.set_visible(True)
+            # Set alpha based on spectrogram visibility
+            if spectrogram_state['visible']:
+                waveform_line.set_alpha(WAVEFORM_ALPHA_WITH_SPECTROGRAM)
+            else:
+                waveform_line.set_alpha(WAVEFORM_ALPHA_DEFAULT)
+            waveform_state['visible'] = True
+            button_waveform.label.set_text('Hide Wave')
+        
+        fig.canvas.draw_idle()
+    
+    button_waveform.on_clicked(toggle_waveform)
     
     # Current state
     state = {
@@ -611,13 +637,13 @@ def plot_voice_segments_interactive(
     
     def on_redetect(event):
         """Handle re-detect button click."""
-        new_threshold = slider_threshold.val / 100.0
-        state['threshold_ratio'] = new_threshold
+        # Use the initial threshold ratio (slider was removed)
+        threshold = state['threshold_ratio']
         
         # Re-detect segments
         segments = detect_voice_segments(
             y, sr,
-            amplitude_threshold_ratio=new_threshold,
+            amplitude_threshold_ratio=threshold,
         )
         
         # Re-extract features
@@ -968,7 +994,8 @@ class OnsetDetectionGUI:
             self.append_result("  Cyan (dash-dot):    a_peak (periodic peak)")
             self.append_result("  Magenta (solid):    a_end (segment end)")
             self.append_result("")
-            self.append_result("Use the slider to adjust threshold and click 'Re-detect' to update.")
+            self.append_result("Use buttons to toggle Spectrogram/Waveform display and Export data.")
+            self.append_result("Use 'Re-detect' to re-run detection with current settings.")
             
             plot_voice_segments_interactive(
                 wav_path, y, sr, features_list,
