@@ -304,11 +304,11 @@ class TestVoiceSegmentDetection(unittest.TestCase):
     
     These tests validate the new voice segment detection functions that
     detect segments (e.g., 'ta' syllables) and extract feature points:
-    - t_start: segment start
+    - t_start: consonant onset (Fujii 10% method)
     - t_peak: burst maximum
-    - a_start: vowel onset
-    - a_stable: vowel stabilization
-    - end: segment end
+    - a_start: vowel onset (periodicity-based voicing detection)
+    - a_peak: first stable periodic peak
+    - a_end: segment end
     """
     
     @classmethod
@@ -406,7 +406,7 @@ class TestVoiceSegmentDetection(unittest.TestCase):
             amplitude_threshold_ratio=0.05
         )
         
-        required_keys = ['t_start', 't_peak', 'a_start', 'a_stable', 'end']
+        required_keys = ['t_start', 't_peak', 'a_start', 'a_peak', 'a_end']
         
         for start, end in segments:
             features = self.onset_detection_gui.extract_feature_points(
@@ -433,16 +433,15 @@ class TestVoiceSegmentDetection(unittest.TestCase):
                 self.audio, self.sr, start, end
             )
             
-            # Feature points should be in order: t_start <= t_peak, t_start <= a_start <= a_stable <= end
-            # Note: a_start can be before t_peak as long as it's after t_start (T segment start)
+            # Feature points should be in order: t_start <= t_peak, t_start <= a_start <= a_peak <= a_end
             self.assertLessEqual(features['t_start'], features['t_peak'],
                                "t_start should be <= t_peak")
             self.assertLessEqual(features['t_start'], features['a_start'],
-                               "t_start should be <= a_start (a_start is valid if after T segment start)")
-            self.assertLessEqual(features['a_start'], features['a_stable'],
-                               "a_start should be <= a_stable")
-            self.assertLessEqual(features['a_stable'], features['end'],
-                               "a_stable should be <= end")
+                               "t_start should be <= a_start")
+            self.assertLessEqual(features['a_start'], features['a_peak'],
+                               "a_start should be <= a_peak")
+            self.assertLessEqual(features['a_peak'], features['a_end'],
+                               "a_peak should be <= a_end")
     
     def test_detect_voice_segments_with_features_integration(self):
         """Test the combined detection and feature extraction function."""
@@ -464,8 +463,8 @@ class TestVoiceSegmentDetection(unittest.TestCase):
             self.assertIn('t_start', features)
             self.assertIn('t_peak', features)
             self.assertIn('a_start', features)
-            self.assertIn('a_stable', features)
-            self.assertIn('end', features)
+            self.assertIn('a_peak', features)
+            self.assertIn('a_end', features)
 
 
 class TestGUIModule(unittest.TestCase):
