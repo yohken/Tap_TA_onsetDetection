@@ -95,8 +95,8 @@ def save_ta_features_csv(
         t_start: t_start times [s]
         t_peak: t_peak times [s]
         a_start: a_start times [s]
-        a_stable: a_stable times [s]
-        end: end times [s]
+        a_peak: a_peak times [s]
+        a_end: a_end times [s]
 
     Args:
         out_path: path to CSV file.
@@ -111,8 +111,8 @@ def save_ta_features_csv(
         't_start': [],
         't_peak': [],
         'a_start': [],
-        'a_stable': [],
-        'end': [],
+        'a_peak': [],
+        'a_end': [],
     }
     
     for i, features in enumerate(features_list):
@@ -120,8 +120,8 @@ def save_ta_features_csv(
         data_dict['t_start'].append(features.get('t_start', np.nan))
         data_dict['t_peak'].append(features.get('t_peak', np.nan))
         data_dict['a_start'].append(features.get('a_start', np.nan))
-        data_dict['a_stable'].append(features.get('a_stable', np.nan))
-        data_dict['end'].append(features.get('end', np.nan))
+        data_dict['a_peak'].append(features.get('a_peak', np.nan))
+        data_dict['a_end'].append(features.get('a_end', np.nan))
     
     df = pd.DataFrame(data_dict)
     
@@ -298,161 +298,78 @@ def extract_feature_points(
     segment_start: int,
     segment_end: int,
     *,
-    t_peak_threshold_ratio: float = T_PEAK_THRESHOLD_RATIO,
-    a_start_rms_increase_ratio: float = A_START_RMS_INCREASE_RATIO,
-    a_stable_variance_threshold: float = A_STABLE_VARIANCE_THRESHOLD,
+    hpf_cutoff: float = 300.0,
+    threshold_ratio: float = 0.1,
+    f0_min: float = 50.0,
+    f0_max: float = 500.0,
+    frame_length_ms: float = 25.0,
+    hop_length_ms: float = 2.0,
+    min_voiced_frames: int = 3,
 ) -> dict[str, float]:
     """
     Extract feature points for a single voice segment (e.g., "ta" syllable).
     
+    This function uses scientifically-grounded methods for detecting:
+    
     Feature points:
-    - t_start: Start of segment (consonant onset)
-    - t_peak: Burst maximum point (consonant peak)
-    - a_start: Transition from consonant to vowel (vowel onset)
-    - a_stable: Point where vowel becomes stable
-    - end: End of segment
+    1. t_start: Consonant onset /t/ - Fujii 10% method with backward search + interpolation
+    2. t_peak: Burst maximum of /t/ - High-frequency envelope maximum
+    3. a_start: Vowel onset /a/ - Periodicity-based voicing detection
+    4. a_peak: First stable periodic peak after a_start
+    5. a_end: End of vowel /a/ (segment end)
+    
+    T_start (Fujii 10% method):
+    - Compute high-frequency envelope (HPF → Hilbert envelope → smoothing)
+    - Let E_peak = max envelope value within segment
+    - Threshold = 0.1 * E_peak (10%)
+    - Search backward from peak until envelope falls below threshold
+    - Linear interpolation for exact crossing point
+    
+    A_start (Periodicity-based voicing detection):
+    - Bandpass filter focusing on F0 band (50-500 Hz)
+    - Short-time analysis with RMS and periodicity (autocorrelation)
+    - Adaptive thresholds using median/MAD
+    - A_start = first frame that is voiced and stays voiced for ≥3-5 frames
+    
+    A_peak:
+    - First stable periodic peak after A_start
+    - Low-pass filter to focus on F0 band
+    - Find first local maximum after A_start
     
     Temporal ordering constraints:
-    - t_start <= t_peak (t_peak is always within T segment)
-    - t_start <= a_start (a_start is valid if after T segment start)
-    - a_start <= a_stable <= end
-    
-    Note: a_start can be before t_peak as long as it's after t_start.
-    This allows detection of A onset within the T segment boundary.
+    - t_start <= t_peak
+    - t_start <= a_start
+    - a_start <= a_peak <= a_end
     
     Args:
         y: Full audio signal.
         sr: Sampling rate in Hz.
         segment_start: Start sample index of the segment.
         segment_end: End sample index of the segment.
-        t_peak_threshold_ratio: Threshold for t-peak detection (default: 0.9).
-        a_start_rms_increase_ratio: RMS increase ratio for a-start detection (default: 0.3).
-        a_stable_variance_threshold: Variance threshold for a-stable detection (default: 0.1).
+        hpf_cutoff: High-pass filter cutoff for T detection (Hz).
+        threshold_ratio: Fujii threshold ratio (default: 0.1 = 10%).
+        f0_min: Minimum F0 for voicing detection (Hz).
+        f0_max: Maximum F0 for voicing detection (Hz).
+        frame_length_ms: Frame length for voicing analysis (ms).
+        hop_length_ms: Hop length for voicing analysis (ms).
+        min_voiced_frames: Minimum consecutive voiced frames for A_start.
     
     Returns:
         Dictionary with feature point times in seconds:
-        {'t_start', 't_peak', 'a_start', 'a_stable', 'end'}
+        {'t_start': float, 't_peak': float, 'a_start': float, 'a_peak': float, 'a_end': float}
     """
-    # Extract segment
-    segment = y[segment_start:segment_end]
-    if len(segment) == 0:
-        t_start_sec = segment_start / sr
-        return {
-            't_start': t_start_sec,
-            't_peak': t_start_sec,
-            'a_start': t_start_sec,
-            'a_stable': t_start_sec,
-            'end': t_start_sec,
-        }
+    import ta_onset_analysis
     
-    # Compute RMS envelope for the segment
-    frame_length = max(int(RMS_FRAME_LENGTH_MS * sr / 1000), 2)
-    hop_length = max(int(RMS_HOP_LENGTH_MS * sr / 1000), 1)
-    
-    env = librosa.feature.rms(y=segment, frame_length=frame_length, hop_length=hop_length)[0]
-    
-    if len(env) == 0:
-        t_start_sec = segment_start / sr
-        return {
-            't_start': t_start_sec,
-            't_peak': t_start_sec,
-            'a_start': t_start_sec,
-            'a_stable': t_start_sec,
-            'end': segment_end / sr,
-        }
-    
-    # Feature point 1: t_start (segment start)
-    t_start_sec = segment_start / sr
-    
-    # Feature point 5: end (segment end)
-    end_sec = segment_end / sr
-    
-    # Feature point 2: t_peak (burst maximum)
-    # Find the first significant peak in the envelope (consonant burst)
-    # Look for peaks in the first portion of the segment (where consonant should be)
-    search_end = max(int(len(env) * CONSONANT_SEARCH_FRACTION), 1)
-    first_part = env[:search_end]
-    
-    if len(first_part) > 0:
-        t_peak_frame = np.argmax(first_part)
-        t_peak_sample = segment_start + t_peak_frame * hop_length
-        t_peak_sec = t_peak_sample / sr
-    else:
-        t_peak_frame = 0
-        t_peak_sec = t_start_sec
-    
-    # Feature point 3: a_start (vowel onset)
-    # Look for the point after t_peak where RMS starts increasing significantly
-    # This indicates the transition from consonant to vowel
-    
-    # Start searching after t_peak
-    search_start = t_peak_frame + 1
-    a_start_frame = search_start
-    
-    if search_start < len(env):
-        # Find the minimum after t_peak (dip between consonant and vowel)
-        remaining = env[search_start:]
-        if len(remaining) > 0:
-            # Find local minimum
-            min_idx = np.argmin(remaining[:len(remaining)//2]) if len(remaining) > 2 else 0
-            
-            # a_start is after the minimum where RMS starts rising
-            a_start_frame = search_start + min_idx
-            
-            # Find where RMS starts increasing significantly
-            for i in range(a_start_frame, len(env) - 1):
-                if env[i + 1] > env[i] * (1 + a_start_rms_increase_ratio * 0.1):
-                    a_start_frame = i
-                    break
-    
-    a_start_sample = segment_start + a_start_frame * hop_length
-    a_start_sec = a_start_sample / sr
-    
-    # Ensure a_start is after t_start (T segment start)
-    # A start is valid as long as it's within the T segment (i.e., after t_start_sec)
-    # Even if a_start is before t_peak, it's accepted if it's after t_start
-    if a_start_sec <= t_start_sec:
-        a_start_sec = t_start_sec + FEATURE_POINT_OFFSET_SEC  # Add small offset
-    
-    # Feature point 4: a_stable (vowel stabilization)
-    # Look for the point where RMS variance becomes low (stable vowel)
-    
-    # Start from a_start and look for stability
-    stability_window = max(int(0.02 * sr / hop_length), 3)  # 20ms window
-    a_stable_frame = a_start_frame
-    
-    if a_start_frame + stability_window < len(env):
-        for i in range(a_start_frame, len(env) - stability_window):
-            window = env[i:i + stability_window]
-            if len(window) > 0:
-                mean_val = np.mean(window)
-                if mean_val > 0:
-                    variance = np.var(window) / (mean_val ** 2)
-                    if variance < a_stable_variance_threshold:
-                        a_stable_frame = i
-                        break
-        else:
-            # If no stable point found, use middle of remaining segment
-            a_stable_frame = (a_start_frame + len(env)) // 2
-    
-    a_stable_sample = segment_start + a_stable_frame * hop_length
-    a_stable_sec = a_stable_sample / sr
-    
-    # Ensure a_stable is after a_start
-    if a_stable_sec <= a_start_sec:
-        a_stable_sec = a_start_sec + FEATURE_POINT_OFFSET_SEC  # Add small offset
-    
-    # Ensure a_stable is before end
-    if a_stable_sec >= end_sec:
-        a_stable_sec = (a_start_sec + end_sec) / 2
-    
-    return {
-        't_start': t_start_sec,
-        't_peak': t_peak_sec,
-        'a_start': a_start_sec,
-        'a_stable': a_stable_sec,
-        'end': end_sec,
-    }
+    return ta_onset_analysis.extract_ta_feature_points(
+        y, sr, segment_start, segment_end,
+        hpf_cutoff=hpf_cutoff,
+        threshold_ratio=threshold_ratio,
+        f0_min=f0_min,
+        f0_max=f0_max,
+        frame_length_ms=frame_length_ms,
+        hop_length_ms=hop_length_ms,
+        min_voiced_frames=min_voiced_frames,
+    )
 
 
 def detect_voice_segments_with_features(
@@ -473,7 +390,7 @@ def detect_voice_segments_with_features(
     
     Returns:
         Tuple of (audio_signal, sample_rate, list_of_feature_dicts)
-        Each feature dict contains: {'t_start', 't_peak', 'a_start', 'a_stable', 'end'}
+        Each feature dict contains: {'t_start', 't_peak', 'a_start', 'a_peak', 'a_end'}
     """
     # Load audio
     y, sr = librosa.load(wav_path, sr=None, mono=True)
@@ -513,11 +430,11 @@ def plot_voice_segments_interactive(
     - Optional spectrogram overlay (PRAAT-style, toggle with button)
     
     Feature points are color-coded:
-    - t_start (segment start): Green solid line
+    - t_start (consonant onset): Green solid line
     - t_peak (burst peak): Red dashed line
     - a_start (vowel onset): Blue dotted line
-    - a_stable (vowel stable): Cyan dash-dot line
-    - end (segment end): Magenta solid line
+    - a_peak (periodic peak): Cyan dash-dot line
+    - a_end (segment end): Magenta solid line
     
     Args:
         wav_path: Path to the WAV file (for re-detection).
@@ -571,11 +488,11 @@ def plot_voice_segments_interactive(
     
     # Define marker styles for each feature point
     marker_styles = {
-        't_start': {'color': 'green', 'linestyle': '-', 'linewidth': 2, 'label': 't-start (segment start)'},
+        't_start': {'color': 'green', 'linestyle': '-', 'linewidth': 2, 'label': 't-start (consonant onset)'},
         't_peak': {'color': 'red', 'linestyle': '--', 'linewidth': 2, 'label': 't-peak (burst max)'},
         'a_start': {'color': 'blue', 'linestyle': ':', 'linewidth': 2, 'label': 'a-start (vowel onset)'},
-        'a_stable': {'color': 'cyan', 'linestyle': '-.', 'linewidth': 2, 'label': 'a-stable (vowel stable)'},
-        'end': {'color': 'magenta', 'linestyle': '-', 'linewidth': 2, 'label': 'end (segment end)'},
+        'a_peak': {'color': 'cyan', 'linestyle': '-.', 'linewidth': 2, 'label': 'a-peak (periodic peak)'},
+        'a_end': {'color': 'magenta', 'linestyle': '-', 'linewidth': 2, 'label': 'a-end (segment end)'},
     }
     
     def draw_markers(features_list_to_draw):
@@ -1006,11 +923,11 @@ class OnsetDetectionGUI:
         
         This method detects voice segments (e.g., "ta" syllables) from audio
         and extracts feature points for each segment:
-        - t_start: segment start (consonant onset)
+        - t_start: consonant onset (Fujii 10% method)
         - t_peak: burst maximum point
-        - a_start: transition from consonant to vowel
-        - a_stable: vowel stabilization point
-        - end: segment end
+        - a_start: vowel onset (periodicity-based voicing detection)
+        - a_peak: first stable periodic peak
+        - a_end: segment end
         """
         self.clear_results()
         self.update_status("Select WAV file for voice segment detection...", 'blue')
@@ -1044,30 +961,30 @@ class OnsetDetectionGUI:
             self.append_result(f"\nDetected {len(features_list)} voice segments:")
             self.append_result("")
             self.append_result("Feature points for each segment:")
-            self.append_result("  - t_start: segment start (consonant onset)")
+            self.append_result("  - t_start: consonant onset (Fujii 10% method)")
             self.append_result("  - t_peak: burst maximum point")
-            self.append_result("  - a_start: vowel onset (transition from t to a)")
-            self.append_result("  - a_stable: vowel stabilization point")
-            self.append_result("  - end: segment end")
+            self.append_result("  - a_start: vowel onset (periodicity-based)")
+            self.append_result("  - a_peak: first stable periodic peak")
+            self.append_result("  - a_end: segment end")
             self.append_result("")
             
             for i, features in enumerate(features_list, 1):
                 self.append_result(f"Segment {i}:")
-                self.append_result(f"  t_start:  {features['t_start']:.3f}s")
-                self.append_result(f"  t_peak:   {features['t_peak']:.3f}s")
-                self.append_result(f"  a_start:  {features['a_start']:.3f}s")
-                self.append_result(f"  a_stable: {features['a_stable']:.3f}s")
-                self.append_result(f"  end:      {features['end']:.3f}s")
+                self.append_result(f"  t_start: {features['t_start']:.3f}s")
+                self.append_result(f"  t_peak:  {features['t_peak']:.3f}s")
+                self.append_result(f"  a_start: {features['a_start']:.3f}s")
+                self.append_result(f"  a_peak:  {features['a_peak']:.3f}s")
+                self.append_result(f"  a_end:   {features['a_end']:.3f}s")
                 self.append_result("")
             
             # Plot results with interactive controls
             self.append_result("Generating interactive plot...")
             self.append_result("Feature point marker colors:")
-            self.append_result("  Green (solid):      t_start (segment start)")
+            self.append_result("  Green (solid):      t_start (consonant onset)")
             self.append_result("  Red (dashed):       t_peak (burst maximum)")
             self.append_result("  Blue (dotted):      a_start (vowel onset)")
-            self.append_result("  Cyan (dash-dot):    a_stable (vowel stable)")
-            self.append_result("  Magenta (solid):    end (segment end)")
+            self.append_result("  Cyan (dash-dot):    a_peak (periodic peak)")
+            self.append_result("  Magenta (solid):    a_end (segment end)")
             self.append_result("")
             self.append_result("Use the slider to adjust threshold and click 'Re-detect' to update.")
             
